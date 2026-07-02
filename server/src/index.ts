@@ -1,7 +1,13 @@
 import express, { type Response } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import { ValorantApiError, getAccount, getMMR, getMatchHistory } from "./valorantApi";
+import {
+  ValorantApiError,
+  getAccount,
+  getMMR,
+  getStoredMatchHistory,
+  syncPlayerHistory,
+} from "./valorantApi";
 
 dotenv.config();
 
@@ -59,14 +65,9 @@ app.get("/api/player/:name/:tag/matches", async (req, res) => {
   }
   const size = Math.min(Number(req.query.size) || 10, 10);
   try {
-    const matches = await getMatchHistory(
-      req.params.name,
-      req.params.tag,
-      region,
-      size,
-      isForceRefresh(req.query.refresh),
-    );
-    res.json(matches);
+    const account = await getAccount(req.params.name, req.params.tag);
+    await syncPlayerHistory(account.puuid, region);
+    res.json(getStoredMatchHistory(account.puuid, size));
   } catch (err) {
     handleValorantApiError(err, res);
   }

@@ -78,6 +78,12 @@ export interface MMR {
   rr: number;
   elo: number;
   lastGameChange: number;
+  iconUrl: string | null;
+  peak: {
+    tier: number;
+    tierName: string;
+    season: string;
+  } | null;
 }
 
 export async function getMMR(
@@ -92,16 +98,44 @@ export async function getMMR(
       ranking_in_tier: number;
       elo: number;
       mmr_change_to_last_game: number;
-    };
+      images: { small: string; large: string } | null;
+    } | null;
+    highest_rank: { tier: number; patched_tier: string; season: string } | null;
   }>(`/v2/mmr/${region}/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`);
 
   const current = data.current_data;
+  if (!current) {
+    return {
+      tier: 0,
+      tierName: "Unranked",
+      rr: 0,
+      elo: 0,
+      lastGameChange: 0,
+      iconUrl: null,
+      peak: data.highest_rank
+        ? {
+            tier: data.highest_rank.tier,
+            tierName: data.highest_rank.patched_tier,
+            season: data.highest_rank.season,
+          }
+        : null,
+    };
+  }
+
   return {
     tier: current.currenttier,
     tierName: current.currenttierpatched,
     rr: current.ranking_in_tier,
     elo: current.elo,
     lastGameChange: current.mmr_change_to_last_game,
+    iconUrl: current.images?.large ?? null,
+    peak: data.highest_rank
+      ? {
+          tier: data.highest_rank.tier,
+          tierName: data.highest_rank.patched_tier,
+          season: data.highest_rank.season,
+        }
+      : null,
   };
 }
 

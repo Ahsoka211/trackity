@@ -1,1 +1,6 @@
 @import "tailwindcss";
+
+@theme {
+  --color-valorant-red: #ff4655;
+  --color-valorant-dark: #0f1923;
+}

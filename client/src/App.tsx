@@ -1,7 +1,16 @@
 import { useState } from 'react';
 import { SearchBar } from './components/SearchBar';
 import { RankCard } from './components/RankCard';
-import { getAccount, getMMR, ApiError, type Account, type MMR } from './lib/api';
+import { MatchHistoryList } from './components/MatchHistoryList';
+import {
+  getAccount,
+  getMMR,
+  getMatchHistory,
+  ApiError,
+  type Account,
+  type MMR,
+  type MatchSummary,
+} from './lib/api';
 import { parseRiotId } from './lib/parseRiotId';
 
 function App() {
@@ -9,6 +18,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
   const [mmr, setMmr] = useState<MMR | null>(null);
+  const [matches, setMatches] = useState<MatchSummary[]>([]);
 
   async function handleSearch(riotId: string) {
     const parsed = parseRiotId(riotId);
@@ -16,6 +26,7 @@ function App() {
       setError('Enter a valid Riot ID, like Name#TAG.');
       setAccount(null);
       setMmr(null);
+      setMatches([]);
       return;
     }
 
@@ -23,12 +34,17 @@ function App() {
     setError(null);
     setAccount(null);
     setMmr(null);
+    setMatches([]);
 
     try {
       const accountData = await getAccount(parsed.name, parsed.tag);
-      const mmrData = await getMMR(parsed.name, parsed.tag, accountData.region);
+      const [mmrData, matchesData] = await Promise.all([
+        getMMR(parsed.name, parsed.tag, accountData.region),
+        getMatchHistory(parsed.name, parsed.tag, accountData.region),
+      ]);
       setAccount(accountData);
       setMmr(mmrData);
+      setMatches(matchesData);
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 429) {
@@ -66,7 +82,12 @@ function App() {
           </div>
         )}
 
-        {account && mmr && !loading && !error && <RankCard account={account} mmr={mmr} />}
+        {account && mmr && !loading && !error && (
+          <>
+            <RankCard account={account} mmr={mmr} />
+            <MatchHistoryList matches={matches} selfName={account.name} selfTag={account.tag} />
+          </>
+        )}
       </div>
     </div>
   );

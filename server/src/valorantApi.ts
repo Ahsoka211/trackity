@@ -139,6 +139,20 @@ export async function getMMR(
   };
 }
 
+export interface ScoreboardPlayer {
+  puuid: string;
+  name: string;
+  tag: string;
+  team: string;
+  agent: string;
+  agentIconUrl: string | null;
+  kills: number;
+  deaths: number;
+  assists: number;
+  acs: number;
+  headshotPercent: number;
+}
+
 export interface MatchSummary {
   matchId: string;
   map: string;
@@ -148,9 +162,30 @@ export interface MatchSummary {
   roundsPlayed: number;
   won: boolean | null;
   agent: string | null;
+  agentIconUrl: string | null;
   kills: number | null;
   deaths: number | null;
   assists: number | null;
+  score: { won: number; lost: number } | null;
+  players: ScoreboardPlayer[];
+}
+
+interface HenrikMatchPlayer {
+  puuid: string;
+  name: string;
+  tag: string;
+  team: string;
+  character: string;
+  stats: {
+    score: number;
+    kills: number;
+    deaths: number;
+    assists: number;
+    bodyshots: number;
+    headshots: number;
+    legshots: number;
+  };
+  assets: { agent: { small: string } };
 }
 
 interface HenrikMatch {
@@ -163,15 +198,26 @@ interface HenrikMatch {
     rounds_played: number;
   };
   players: {
-    all_players: {
-      name: string;
-      tag: string;
-      team: string;
-      character: string;
-      stats: { kills: number; deaths: number; assists: number };
-    }[];
+    all_players: HenrikMatchPlayer[];
   };
-  teams: Record<string, { has_won: boolean }>;
+  teams: Record<string, { has_won: boolean; rounds_won: number; rounds_lost: number }>;
+}
+
+function toScoreboardPlayer(p: HenrikMatchPlayer, roundsPlayed: number): ScoreboardPlayer {
+  const totalShots = p.stats.headshots + p.stats.bodyshots + p.stats.legshots;
+  return {
+    puuid: p.puuid,
+    name: p.name,
+    tag: p.tag,
+    team: p.team,
+    agent: p.character,
+    agentIconUrl: p.assets.agent?.small ?? null,
+    kills: p.stats.kills,
+    deaths: p.stats.deaths,
+    assists: p.stats.assists,
+    acs: roundsPlayed > 0 ? Math.round(p.stats.score / roundsPlayed) : 0,
+    headshotPercent: totalShots > 0 ? Math.round((p.stats.headshots / totalShots) * 100) : 0,
+  };
 }
 
 export async function getMatchHistory(
@@ -186,6 +232,7 @@ export async function getMatchHistory(
   );
 
   return matches.map((match) => {
+    const roundsPlayed = match.metadata.rounds_played;
     const player = match.players.all_players.find(
       (p) => p.name.toLowerCase() === name.toLowerCase() && p.tag.toLowerCase() === tag.toLowerCase(),
     );
@@ -197,12 +244,17 @@ export async function getMatchHistory(
       mode: match.metadata.mode,
       queue: match.metadata.queue,
       playedAt: match.metadata.game_start_patched,
-      roundsPlayed: match.metadata.rounds_played,
+      roundsPlayed,
       won: team?.has_won ?? null,
       agent: player?.character ?? null,
+      agentIconUrl: player?.assets.agent?.small ?? null,
       kills: player?.stats.kills ?? null,
       deaths: player?.stats.deaths ?? null,
       assists: player?.stats.assists ?? null,
+      score: team ? { won: team.rounds_won, lost: team.rounds_lost } : null,
+      players: match.players.all_players
+        .map((p) => toScoreboardPlayer(p, roundsPlayed))
+        .sort((a, b) => b.acs - a.acs),
     };
   });
 }

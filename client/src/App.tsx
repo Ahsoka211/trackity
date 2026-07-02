@@ -67,7 +67,7 @@ function App() {
       <div className="mx-auto flex max-w-2xl flex-col items-center gap-8 px-4 py-16">
         <div className="text-center">
           <h1 className="text-3xl font-bold tracking-tight">
-            <span className="text-valorant-red">VALORANT</span> Tracker
+            <span className="text-valorant-red">Track</span>ity
           </h1>
           <p className="mt-1 text-sm text-zinc-500">Look up a player's current rank</p>
         </div>

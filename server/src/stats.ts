@@ -32,6 +32,10 @@ interface PlayerMatchRow {
   kills: number;
   deaths: number;
   assists: number;
+  headshots: number;
+  bodyshots: number;
+  legshots: number;
+  damage_dealt: number;
 }
 
 interface TeamMemberRow {
@@ -74,7 +78,8 @@ interface RpsRow {
 // Every query anchors on the player's Standard-mode matches.
 const playerMatchesStmt = db.prepare(`
   SELECT m.match_id, m.map_name, m.rounds_played, m.teams_json,
-         mp.team_id, mp.agent_name, mp.kills, mp.deaths, mp.assists
+         mp.team_id, mp.agent_name, mp.kills, mp.deaths, mp.assists,
+         mp.headshots, mp.bodyshots, mp.legshots, mp.damage_dealt
   FROM matches m
   JOIN match_players mp ON mp.match_id = m.match_id
   WHERE mp.puuid = ? AND m.mode_type = 'Standard'
@@ -125,6 +130,10 @@ interface MatchInfo {
   kills: number;
   deaths: number;
   assists: number;
+  headshots: number;
+  bodyshots: number;
+  legshots: number;
+  damageDealt: number;
   won: boolean | null;
   teamOf: Map<string, string>;
   teamIds: string[];
@@ -239,6 +248,10 @@ export function loadPlayerDataset(puuid: string): PlayerDataset {
       kills: row.kills,
       deaths: row.deaths,
       assists: row.assists,
+      headshots: row.headshots,
+      bodyshots: row.bodyshots,
+      legshots: row.legshots,
+      damageDealt: row.damage_dealt,
       won: teams.find((t) => t.team_id === row.team_id)?.won ?? null,
       teamOf,
       teamIds: [...new Set(teamOf.values())],
@@ -640,14 +653,89 @@ export function computeMultiKillStats(ds: PlayerDataset): MultiKillStats {
   return stats;
 }
 
+export interface OverallStats {
+  matches: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  kills: number;
+  deaths: number;
+  assists: number;
+  kd: number;
+  hsPercent: number;
+  adr: number;
+}
+
+export function computeOverallStats(ds: PlayerDataset): OverallStats {
+  let wins = 0;
+  let losses = 0;
+  let kills = 0;
+  let deaths = 0;
+  let assists = 0;
+  let head = 0;
+  let shots = 0;
+  let damage = 0;
+  let rounds = 0;
+  for (const m of ds.matches) {
+    if (m.won === true) wins++;
+    if (m.won === false) losses++;
+    kills += m.kills;
+    deaths += m.deaths;
+    assists += m.assists;
+    head += m.headshots;
+    shots += m.headshots + m.bodyshots + m.legshots;
+    damage += m.damageDealt;
+    rounds += m.roundsPlayed;
+  }
+  return {
+    matches: ds.matches.length,
+    wins,
+    losses,
+    winRate: pct(wins, wins + losses),
+    kills,
+    deaths,
+    assists,
+    kd: ratio(kills, deaths),
+    hsPercent: pct(head, shots),
+    adr: rounds > 0 ? Math.round((damage / rounds) * 10) / 10 : 0,
+  };
+}
+
+export interface RoundTypeStat {
+  roundType: RoundType;
+  rounds: number;
+  won: number;
+  winRate: number;
+}
+
+export function computeRoundTypeStats(ds: PlayerDataset): RoundTypeStat[] {
+  const groups = new Map<RoundType, { rounds: number; won: number }>(
+    ROUND_TYPES.map((t) => [t, { rounds: 0, won: 0 }]),
+  );
+  for (const r of ds.rounds) {
+    const match = ds.byMatch.get(r.match_id);
+    if (!match) continue;
+    const type = ds.roundTypeByKey.get(roundKey(r.match_id, r.round_num)) ?? "unknown";
+    const g = groups.get(type)!;
+    g.rounds++;
+    if (r.winning_team === match.myTeam) g.won++;
+  }
+  return ROUND_TYPES.map((roundType) => {
+    const g = groups.get(roundType)!;
+    return { roundType, rounds: g.rounds, won: g.won, winRate: pct(g.won, g.rounds) };
+  });
+}
+
 // --- combined payload ---
 
 export interface PlayerInsights {
   matchesAnalyzed: number;
   roundsAnalyzed: number;
+  overall: OverallStats;
   maps: MapStat[];
   agents: AgentStat[];
   sidesByMap: SideStatByMap[];
+  roundTypes: RoundTypeStat[];
   weapons: WeaponStat[];
   deathTimes: DeathTimeStats;
   firstBlood: FirstBloodStats;
@@ -660,9 +748,11 @@ export function getPlayerInsights(puuid: string): PlayerInsights {
   return {
     matchesAnalyzed: ds.matches.length,
     roundsAnalyzed: ds.rounds.length,
+    overall: computeOverallStats(ds),
     maps: computeMapStats(ds),
     agents: computeAgentStats(ds),
     sidesByMap: computeSideStatsByMap(ds),
+    roundTypes: computeRoundTypeStats(ds),
     weapons: computeWeaponStats(ds),
     deathTimes: computeDeathTimeStats(ds),
     firstBlood: computeFirstBloodStats(ds),

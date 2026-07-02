@@ -9,6 +9,7 @@ import {
   syncPlayerHistory,
 } from "./valorantApi";
 import { getPlayerInsights } from "./stats";
+import { getPlayerRecommendations } from "./recommendations";
 
 dotenv.config();
 
@@ -84,6 +85,21 @@ app.get("/api/player/:name/:tag/insights", async (req, res) => {
     const account = await getAccount(req.params.name, req.params.tag);
     await syncPlayerHistory(account.puuid, region);
     res.json(getPlayerInsights(account.puuid));
+  } catch (err) {
+    handleValorantApiError(err, res);
+  }
+});
+
+app.get("/api/player/:name/:tag/recommendations", async (req, res) => {
+  const region = req.query.region;
+  if (typeof region !== "string") {
+    res.status(400).json({ error: "Query param 'region' is required (e.g. na, eu, ap, kr, latam, br)." });
+    return;
+  }
+  try {
+    const account = await getAccount(req.params.name, req.params.tag);
+    await syncPlayerHistory(account.puuid, region);
+    res.json(getPlayerRecommendations(account.puuid));
   } catch (err) {
     handleValorantApiError(err, res);
   }

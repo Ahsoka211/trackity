@@ -90,10 +90,42 @@ db.exec(`
     UNIQUE (match_id, round_num, time_in_match_ms, killer_puuid, victim_puuid)
   );
   CREATE INDEX IF NOT EXISTS idx_kills_match ON kills (match_id);
+
+  CREATE TABLE IF NOT EXISTS round_player_stats (
+    match_id TEXT NOT NULL REFERENCES matches(match_id),
+    round_num INTEGER NOT NULL,
+    puuid TEXT NOT NULL,
+    team_id TEXT NOT NULL,
+    score INTEGER NOT NULL,
+    kills INTEGER NOT NULL,
+    headshots INTEGER NOT NULL,
+    bodyshots INTEGER NOT NULL,
+    legshots INTEGER NOT NULL,
+    damage INTEGER NOT NULL,
+    loadout_value INTEGER,
+    remaining INTEGER,
+    weapon_id TEXT,
+    weapon_name TEXT,
+    UNIQUE (match_id, round_num, puuid)
+  );
 `);
 
 // Match data now lives in the tables above; the old TTL-cache rows for it are dead weight.
 db.exec("DELETE FROM player_cache WHERE kind IN ('matches', 'match_details')");
+
+// Matches stored before round_player_stats existed can't be backfilled from
+// the store, so wipe them once; the next sync refetches everything.
+const SCHEMA_VERSION = 1;
+if ((db.pragma("user_version", { simple: true }) as number) < SCHEMA_VERSION) {
+  db.exec(`
+    DELETE FROM kills;
+    DELETE FROM rounds;
+    DELETE FROM round_player_stats;
+    DELETE FROM match_players;
+    DELETE FROM matches;
+  `);
+  db.pragma(`user_version = ${SCHEMA_VERSION}`);
+}
 
 // --- 5-minute TTL cache (account + rank/MMR lookups only) ---
 
@@ -222,6 +254,18 @@ const insertKillStmt = db.prepare(`
   )
 `);
 
+const insertRoundPlayerStatsStmt = db.prepare(`
+  INSERT OR IGNORE INTO round_player_stats (
+    match_id, round_num, puuid, team_id, score, kills,
+    headshots, bodyshots, legshots, damage,
+    loadout_value, remaining, weapon_id, weapon_name
+  ) VALUES (
+    @matchId, @roundNum, @puuid, @teamId, @score, @kills,
+    @headshots, @bodyshots, @legshots, @damage,
+    @loadoutValue, @remaining, @weaponId, @weaponName
+  )
+`);
+
 export function hasMatch(matchId: string): boolean {
   return hasMatchStmt.get(matchId) !== undefined;
 }
@@ -282,6 +326,25 @@ export const storeFullMatch = db.transaction((match: FullMatchDetails): boolean 
       defuseTimeInRoundMs: r.defuse?.round_time_in_ms ?? null,
       defusePlayerPuuid: r.defuse?.player?.puuid ?? null,
     });
+
+    for (const s of r.stats ?? []) {
+      insertRoundPlayerStatsStmt.run({
+        matchId: meta.match_id,
+        roundNum: r.id,
+        puuid: s.player.puuid,
+        teamId: s.player.team,
+        score: s.stats.score,
+        kills: s.stats.kills,
+        headshots: s.stats.headshots,
+        bodyshots: s.stats.bodyshots,
+        legshots: s.stats.legshots,
+        damage: s.damage_events.reduce((total, e) => total + e.damage, 0),
+        loadoutValue: s.economy?.loadout_value ?? null,
+        remaining: s.economy?.remaining ?? null,
+        weaponId: s.economy?.weapon?.id ?? null,
+        weaponName: s.economy?.weapon?.name ?? null,
+      });
+    }
   }
 
   for (const k of match.kills) {

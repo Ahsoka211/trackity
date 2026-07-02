@@ -199,6 +199,35 @@ export interface V4MatchPlayer {
   account_level: number | null;
 }
 
+export interface V4DamageEvent {
+  player: V4PlayerRef | null;
+  bodyshots: number;
+  headshots: number;
+  legshots: number;
+  damage: number;
+}
+
+export interface V4RoundPlayerStats {
+  player: V4PlayerRef;
+  damage_events: V4DamageEvent[];
+  stats: {
+    score: number;
+    kills: number;
+    headshots: number;
+    bodyshots: number;
+    legshots: number;
+  };
+  economy: {
+    loadout_value: number | null;
+    remaining: number | null;
+    weapon: { id: string; name: string | null; type: string } | null;
+    armor: { id: string; name: string } | null;
+  } | null;
+  was_afk: boolean;
+  received_penalty: boolean;
+  stayed_in_spawn: boolean;
+}
+
 export interface V4Round {
   id: number;
   result: string;
@@ -215,6 +244,7 @@ export interface V4Round {
     location: { x: number; y: number } | null;
     player: V4PlayerRef;
   } | null;
+  stats: V4RoundPlayerStats[] | null;
 }
 
 export interface V4Kill {

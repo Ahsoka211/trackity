@@ -24,9 +24,13 @@ function handleValorantApiError(err: unknown, res: Response) {
   res.status(500).json({ error: "Unexpected error contacting the Henrik API." });
 }
 
+function isForceRefresh(value: unknown): boolean {
+  return value === "true" || value === "1";
+}
+
 app.get("/api/player/:name/:tag/account", async (req, res) => {
   try {
-    const account = await getAccount(req.params.name, req.params.tag);
+    const account = await getAccount(req.params.name, req.params.tag, isForceRefresh(req.query.refresh));
     res.json(account);
   } catch (err) {
     handleValorantApiError(err, res);
@@ -40,7 +44,7 @@ app.get("/api/player/:name/:tag/mmr", async (req, res) => {
     return;
   }
   try {
-    const mmr = await getMMR(req.params.name, req.params.tag, region);
+    const mmr = await getMMR(req.params.name, req.params.tag, region, isForceRefresh(req.query.refresh));
     res.json(mmr);
   } catch (err) {
     handleValorantApiError(err, res);
@@ -55,7 +59,13 @@ app.get("/api/player/:name/:tag/matches", async (req, res) => {
   }
   const size = Math.min(Number(req.query.size) || 10, 10);
   try {
-    const matches = await getMatchHistory(req.params.name, req.params.tag, region, size);
+    const matches = await getMatchHistory(
+      req.params.name,
+      req.params.tag,
+      region,
+      size,
+      isForceRefresh(req.query.refresh),
+    );
     res.json(matches);
   } catch (err) {
     handleValorantApiError(err, res);

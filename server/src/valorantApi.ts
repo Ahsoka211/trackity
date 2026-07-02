@@ -1,4 +1,7 @@
+import { getCached, setCached } from "./db";
+
 const BASE_URL = "https://api.henrikdev.xyz/valorant";
+const MAX_MATCHES = 10;
 
 interface HenrikErrorBody {
   errors?: { code: number; message: string; status: number; details: unknown }[];
@@ -52,7 +55,17 @@ export interface Account {
   card: string;
 }
 
-export async function getAccount(name: string, tag: string): Promise<Account> {
+export async function getAccount(
+  name: string,
+  tag: string,
+  forceRefresh = false,
+): Promise<Account> {
+  const riotId = `${name}#${tag}`;
+  if (!forceRefresh) {
+    const cached = getCached<Account>("account", riotId, "");
+    if (cached) return cached;
+  }
+
   const data = await henrikGet<{
     puuid: string;
     name: string;
@@ -62,7 +75,7 @@ export async function getAccount(name: string, tag: string): Promise<Account> {
     card: string;
   }>(`/v2/account/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`);
 
-  return {
+  const account: Account = {
     puuid: data.puuid,
     name: data.name,
     tag: data.tag,
@@ -70,6 +83,9 @@ export async function getAccount(name: string, tag: string): Promise<Account> {
     accountLevel: data.account_level,
     card: data.card,
   };
+
+  setCached("account", riotId, "", account);
+  return account;
 }
 
 export interface MMR {
@@ -90,7 +106,14 @@ export async function getMMR(
   name: string,
   tag: string,
   region: string,
+  forceRefresh = false,
 ): Promise<MMR> {
+  const riotId = `${name}#${tag}`;
+  if (!forceRefresh) {
+    const cached = getCached<MMR>("mmr", riotId, region);
+    if (cached) return cached;
+  }
+
   const data = await henrikGet<{
     current_data: {
       currenttier: number;
@@ -104,39 +127,40 @@ export async function getMMR(
   }>(`/v2/mmr/${region}/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`);
 
   const current = data.current_data;
-  if (!current) {
-    return {
-      tier: 0,
-      tierName: "Unranked",
-      rr: 0,
-      elo: 0,
-      lastGameChange: 0,
-      iconUrl: null,
-      peak: data.highest_rank
-        ? {
-            tier: data.highest_rank.tier,
-            tierName: data.highest_rank.patched_tier,
-            season: data.highest_rank.season,
-          }
-        : null,
-    };
-  }
+  const mmr: MMR = !current
+    ? {
+        tier: 0,
+        tierName: "Unranked",
+        rr: 0,
+        elo: 0,
+        lastGameChange: 0,
+        iconUrl: null,
+        peak: data.highest_rank
+          ? {
+              tier: data.highest_rank.tier,
+              tierName: data.highest_rank.patched_tier,
+              season: data.highest_rank.season,
+            }
+          : null,
+      }
+    : {
+        tier: current.currenttier,
+        tierName: current.currenttierpatched,
+        rr: current.ranking_in_tier,
+        elo: current.elo,
+        lastGameChange: current.mmr_change_to_last_game,
+        iconUrl: current.images?.large ?? null,
+        peak: data.highest_rank
+          ? {
+              tier: data.highest_rank.tier,
+              tierName: data.highest_rank.patched_tier,
+              season: data.highest_rank.season,
+            }
+          : null,
+      };
 
-  return {
-    tier: current.currenttier,
-    tierName: current.currenttierpatched,
-    rr: current.ranking_in_tier,
-    elo: current.elo,
-    lastGameChange: current.mmr_change_to_last_game,
-    iconUrl: current.images?.large ?? null,
-    peak: data.highest_rank
-      ? {
-          tier: data.highest_rank.tier,
-          tierName: data.highest_rank.patched_tier,
-          season: data.highest_rank.season,
-        }
-      : null,
-  };
+  setCached("mmr", riotId, region, mmr);
+  return mmr;
 }
 
 export interface ScoreboardPlayer {
@@ -224,14 +248,21 @@ export async function getMatchHistory(
   name: string,
   tag: string,
   region: string,
-  size = 10,
+  size = MAX_MATCHES,
+  forceRefresh = false,
 ): Promise<MatchSummary[]> {
+  const riotId = `${name}#${tag}`;
+  if (!forceRefresh) {
+    const cached = getCached<MatchSummary[]>("matches", riotId, region);
+    if (cached) return cached.slice(0, size);
+  }
+
   const matches = await henrikGet<HenrikMatch[]>(
     `/v3/matches/${region}/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`,
-    { size: String(size) },
+    { size: String(MAX_MATCHES) },
   );
 
-  return matches.map((match) => {
+  const summaries = matches.map((match) => {
     const roundsPlayed = match.metadata.rounds_played;
     const player = match.players.all_players.find(
       (p) => p.name.toLowerCase() === name.toLowerCase() && p.tag.toLowerCase() === tag.toLowerCase(),
@@ -257,4 +288,7 @@ export async function getMatchHistory(
         .sort((a, b) => b.acs - a.acs),
     };
   });
+
+  setCached("matches", riotId, region, summaries);
+  return summaries.slice(0, size);
 }

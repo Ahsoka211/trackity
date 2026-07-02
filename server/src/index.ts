@@ -1,6 +1,7 @@
-import express from "express";
+import express, { type Response } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import { ValorantApiError, getAccount, getMMR, getMatchHistory } from "./valorantApi";
 
 dotenv.config();
 
@@ -12,6 +13,53 @@ app.use(express.json());
 
 app.get("/api/hello", (_req, res) => {
   res.json({ message: "Hello from the server!" });
+});
+
+function handleValorantApiError(err: unknown, res: Response) {
+  if (err instanceof ValorantApiError) {
+    res.status(err.status).json({ error: err.message });
+    return;
+  }
+  console.error(err);
+  res.status(500).json({ error: "Unexpected error contacting the Henrik API." });
+}
+
+app.get("/api/player/:name/:tag/account", async (req, res) => {
+  try {
+    const account = await getAccount(req.params.name, req.params.tag);
+    res.json(account);
+  } catch (err) {
+    handleValorantApiError(err, res);
+  }
+});
+
+app.get("/api/player/:name/:tag/mmr", async (req, res) => {
+  const region = req.query.region;
+  if (typeof region !== "string") {
+    res.status(400).json({ error: "Query param 'region' is required (e.g. na, eu, ap, kr, latam, br)." });
+    return;
+  }
+  try {
+    const mmr = await getMMR(req.params.name, req.params.tag, region);
+    res.json(mmr);
+  } catch (err) {
+    handleValorantApiError(err, res);
+  }
+});
+
+app.get("/api/player/:name/:tag/matches", async (req, res) => {
+  const region = req.query.region;
+  if (typeof region !== "string") {
+    res.status(400).json({ error: "Query param 'region' is required (e.g. na, eu, ap, kr, latam, br)." });
+    return;
+  }
+  const size = Math.min(Number(req.query.size) || 10, 10);
+  try {
+    const matches = await getMatchHistory(req.params.name, req.params.tag, region, size);
+    res.json(matches);
+  } catch (err) {
+    handleValorantApiError(err, res);
+  }
 });
 
 app.listen(PORT, () => {

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { SearchBar } from './components/SearchBar';
 import { RankCard } from './components/RankCard';
 import { MatchHistoryList } from './components/MatchHistoryList';
+import { InsightsPanel } from './components/InsightsPanel';
 import {
   getAccount,
   getMMR,
@@ -13,12 +14,15 @@ import {
 } from './lib/api';
 import { parseRiotId } from './lib/parseRiotId';
 
+type Tab = 'matches' | 'insights';
+
 function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
   const [mmr, setMmr] = useState<MMR | null>(null);
   const [matches, setMatches] = useState<MatchSummary[]>([]);
+  const [tab, setTab] = useState<Tab>('matches');
 
   async function handleSearch(riotId: string) {
     const parsed = parseRiotId(riotId);
@@ -85,7 +89,29 @@ function App() {
         {account && mmr && !loading && !error && (
           <>
             <RankCard account={account} mmr={mmr} />
-            <MatchHistoryList matches={matches} selfName={account.name} selfTag={account.tag} />
+
+            <div className="flex w-full max-w-md gap-1 rounded-lg border border-zinc-800 bg-zinc-900/60 p-1">
+              {(['matches', 'insights'] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setTab(t)}
+                  className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                    tab === t
+                      ? 'bg-valorant-red/15 text-valorant-red'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  {t === 'matches' ? 'Matches' : 'Insights'}
+                </button>
+              ))}
+            </div>
+
+            {tab === 'matches' ? (
+              <MatchHistoryList matches={matches} selfName={account.name} selfTag={account.tag} />
+            ) : (
+              <InsightsPanel name={account.name} tag={account.tag} region={account.region} />
+            )}
           </>
         )}
       </div>

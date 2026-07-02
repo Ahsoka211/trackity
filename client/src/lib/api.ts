@@ -95,3 +95,155 @@ export function getMatchHistory(
     `/api/player/${encodeURIComponent(name)}/${encodeURIComponent(tag)}/matches?region=${encodeURIComponent(region)}&size=${size}`,
   );
 }
+
+export interface OverallStats {
+  matches: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  kills: number;
+  deaths: number;
+  assists: number;
+  kd: number;
+  hsPercent: number;
+  adr: number;
+}
+
+export interface MapStat {
+  map: string;
+  matches: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  kills: number;
+  deaths: number;
+  kd: number;
+}
+
+export interface AgentStat {
+  agent: string;
+  agentId: string;
+  matches: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  kills: number;
+  deaths: number;
+  kd: number;
+}
+
+export interface SideRecord {
+  rounds: number;
+  won: number;
+  winRate: number;
+}
+
+export interface SideStatByMap {
+  map: string;
+  attack: SideRecord;
+  defense: SideRecord;
+}
+
+export interface RoundTypeStat {
+  roundType: 'pistol' | 'eco' | 'semi' | 'fullBuy' | 'unknown';
+  rounds: number;
+  won: number;
+  winRate: number;
+}
+
+export interface WeaponStat {
+  weaponId: string;
+  weapon: string;
+  type: string;
+  kills: number;
+  hsPercent: number | null;
+  hsSampleRounds: number;
+}
+
+export type RoundPhase = 'opening' | 'mid' | 'late' | 'postPlant';
+
+export interface PhaseCounts {
+  opening: number;
+  mid: number;
+  late: number;
+  postPlant: number;
+  total: number;
+}
+
+export interface DeathTimeStats {
+  totalDeaths: number;
+  byPhase: Record<RoundPhase, number>;
+  byRoundType: Record<string, PhaseCounts>;
+}
+
+export interface FirstBloodStats {
+  rounds: number;
+  firstBloods: number;
+  firstDeaths: number;
+  firstBloodRate: number;
+  firstDeathRate: number;
+}
+
+export interface ClutchRecord {
+  attempts: number;
+  wins: number;
+}
+
+export interface ClutchStats {
+  attempts: number;
+  wins: number;
+  bySituation: Record<'1v1' | '1v2' | '1v3' | '1v4' | '1v5', ClutchRecord>;
+}
+
+export interface MultiKillStats {
+  doubleKills: number;
+  tripleKills: number;
+  quadKills: number;
+  aces: number;
+}
+
+export interface PlayerInsights {
+  matchesAnalyzed: number;
+  roundsAnalyzed: number;
+  overall: OverallStats;
+  maps: MapStat[];
+  agents: AgentStat[];
+  sidesByMap: SideStatByMap[];
+  roundTypes: RoundTypeStat[];
+  weapons: WeaponStat[];
+  deathTimes: DeathTimeStats;
+  firstBlood: FirstBloodStats;
+  clutches: ClutchStats;
+  multiKills: MultiKillStats;
+}
+
+export interface Recommendation {
+  id: string;
+  category: string;
+  message: string;
+  evidence: string;
+  sampleSize: number;
+  score: number;
+}
+
+export interface PlayerRecommendations {
+  matchesAnalyzed: number;
+  roundsAnalyzed: number;
+  recommendations: Recommendation[];
+}
+
+export function getInsights(name: string, tag: string, region: string): Promise<PlayerInsights> {
+  return apiGet<PlayerInsights>(
+    `/api/player/${encodeURIComponent(name)}/${encodeURIComponent(tag)}/insights?region=${encodeURIComponent(region)}`,
+  );
+}
+
+export function getRecommendations(
+  name: string,
+  tag: string,
+  region: string,
+): Promise<PlayerRecommendations> {
+  return apiGet<PlayerRecommendations>(
+    `/api/player/${encodeURIComponent(name)}/${encodeURIComponent(tag)}/recommendations?region=${encodeURIComponent(region)}`,
+  );
+}

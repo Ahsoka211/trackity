@@ -28,6 +28,7 @@ interface PlayerMatchRow {
   rounds_played: number;
   teams_json: string;
   team_id: string;
+  agent_id: string;
   agent_name: string;
   kills: number;
   deaths: number;
@@ -78,7 +79,7 @@ interface RpsRow {
 // Every query anchors on the player's Standard-mode matches.
 const playerMatchesStmt = db.prepare(`
   SELECT m.match_id, m.map_name, m.rounds_played, m.teams_json,
-         mp.team_id, mp.agent_name, mp.kills, mp.deaths, mp.assists,
+         mp.team_id, mp.agent_id, mp.agent_name, mp.kills, mp.deaths, mp.assists,
          mp.headshots, mp.bodyshots, mp.legshots, mp.damage_dealt
   FROM matches m
   JOIN match_players mp ON mp.match_id = m.match_id
@@ -127,6 +128,7 @@ interface MatchInfo {
   roundsPlayed: number;
   myTeam: string;
   agent: string;
+  agentId: string;
   kills: number;
   deaths: number;
   assists: number;
@@ -245,6 +247,7 @@ export function loadPlayerDataset(puuid: string): PlayerDataset {
       roundsPlayed: row.rounds_played,
       myTeam: row.team_id,
       agent: row.agent_name,
+      agentId: row.agent_id,
       kills: row.kills,
       deaths: row.deaths,
       assists: row.assists,
@@ -339,6 +342,7 @@ export function computeMapStats(ds: PlayerDataset): MapStat[] {
 
 export interface AgentStat {
   agent: string;
+  agentId: string;
   matches: number;
   wins: number;
   losses: number;
@@ -349,8 +353,13 @@ export interface AgentStat {
 }
 
 export function computeAgentStats(ds: PlayerDataset): AgentStat[] {
+  const idByAgent = new Map<string, string>();
+  for (const m of ds.matches) {
+    if (!idByAgent.has(m.agent)) idByAgent.set(m.agent, m.agentId);
+  }
   return computeGroupedMatchStats(ds, (m) => m.agent).map(({ group, ...rest }) => ({
     agent: group,
+    agentId: idByAgent.get(group) ?? "",
     ...rest,
   }));
 }

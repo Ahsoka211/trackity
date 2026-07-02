@@ -366,9 +366,9 @@ export interface MatchSummary {
   players: ScoreboardPlayer[];
 }
 
-// v4 no longer ships asset URLs the way v3 did; build the same CDN URL v3 used.
+// v4 no longer ships asset URLs the way v3 did; build the CDN URL ourselves.
 function agentIconUrl(agentId: string): string {
-  return `https://media.valorant-api.com/agents/${agentId}/displayiconsmall.png`;
+  return `https://media.valorant-api.com/agents/${agentId}/displayicon.png`;
 }
 
 function toScoreboardPlayer(p: StoredMatchPlayerRow, roundsPlayed: number): ScoreboardPlayer {

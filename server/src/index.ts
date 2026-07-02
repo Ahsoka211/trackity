@@ -4,8 +4,8 @@ import dotenv from "dotenv";
 import {
   ValorantApiError,
   getAccount,
+  getFilteredMatchHistory,
   getMMR,
-  getStoredMatchHistory,
   syncPlayerHistory,
 } from "./valorantApi";
 import { getPlayerInsights } from "./stats";
@@ -65,11 +65,29 @@ app.get("/api/player/:name/:tag/matches", async (req, res) => {
     res.status(400).json({ error: "Query param 'region' is required (e.g. na, eu, ap, kr, latam, br)." });
     return;
   }
-  const size = Math.min(Number(req.query.size) || 10, 10);
+  const size = Math.min(Number(req.query.size) || 20, 50);
+  const param = (value: unknown): string | undefined =>
+    typeof value === "string" && value !== "" ? value : undefined;
+  const sinceRaw = param(req.query.since);
+  const since =
+    sinceRaw && !Number.isNaN(Date.parse(sinceRaw))
+      ? new Date(sinceRaw).toISOString()
+      : undefined;
   try {
     const account = await getAccount(req.params.name, req.params.tag);
     await syncPlayerHistory(account.puuid, region);
-    res.json(getStoredMatchHistory(account.puuid, size));
+    res.json(
+      getFilteredMatchHistory(
+        account.puuid,
+        {
+          queueId: param(req.query.mode),
+          map: param(req.query.map),
+          agent: param(req.query.agent),
+          since,
+        },
+        size,
+      ),
+    );
   } catch (err) {
     handleValorantApiError(err, res);
   }

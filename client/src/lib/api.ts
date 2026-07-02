@@ -85,14 +85,49 @@ export interface MatchSummary {
   players: ScoreboardPlayer[];
 }
 
+export interface HistorySummary {
+  matches: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  kd: number;
+  avgAcs: number;
+  hsPercent: number;
+}
+
+export interface FilterOptions {
+  modes: { id: string; name: string }[];
+  maps: string[];
+  agents: string[];
+}
+
+export interface MatchFilters {
+  mode?: string;
+  map?: string;
+  agent?: string;
+  since?: string;
+}
+
+export interface MatchHistoryResponse {
+  summary: HistorySummary;
+  filters: FilterOptions;
+  matches: MatchSummary[];
+}
+
 export function getMatchHistory(
   name: string,
   tag: string,
   region: string,
-  size = 10,
-): Promise<MatchSummary[]> {
-  return apiGet<MatchSummary[]>(
-    `/api/player/${encodeURIComponent(name)}/${encodeURIComponent(tag)}/matches?region=${encodeURIComponent(region)}&size=${size}`,
+  filters: MatchFilters = {},
+  size = 20,
+): Promise<MatchHistoryResponse> {
+  const params = new URLSearchParams({ region, size: String(size) });
+  if (filters.mode) params.set('mode', filters.mode);
+  if (filters.map) params.set('map', filters.map);
+  if (filters.agent) params.set('agent', filters.agent);
+  if (filters.since) params.set('since', filters.since);
+  return apiGet<MatchHistoryResponse>(
+    `/api/player/${encodeURIComponent(name)}/${encodeURIComponent(tag)}/matches?${params.toString()}`,
   );
 }
 

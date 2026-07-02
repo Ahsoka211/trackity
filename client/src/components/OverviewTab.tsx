@@ -1,0 +1,198 @@
+import { useEffect, useState } from 'react';
+import {
+  getMatchHistory,
+  ApiError,
+  type FilterOptions,
+  type HistorySummary,
+  type MatchFilters,
+  type MatchHistoryResponse,
+} from '../lib/api';
+import { MatchHistoryList } from './MatchHistoryList';
+
+interface OverviewTabProps {
+  name: string;
+  tag: string;
+  region: string;
+}
+
+const DATE_RANGES = [
+  { value: 'all', label: 'All time' },
+  { value: '7', label: 'Last 7 days' },
+  { value: '30', label: 'Last 30 days' },
+  { value: '90', label: 'Last 90 days' },
+];
+
+export function OverviewTab({ name, tag, region }: OverviewTabProps) {
+  const [mode, setMode] = useState('');
+  const [map, setMap] = useState('');
+  const [agent, setAgent] = useState('');
+  const [range, setRange] = useState('all');
+  const [data, setData] = useState<MatchHistoryResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    const filters: MatchFilters = {};
+    if (mode) filters.mode = mode;
+    if (map) filters.map = map;
+    if (agent) filters.agent = agent;
+    if (range !== 'all') {
+      filters.since = new Date(Date.now() - Number(range) * 86_400_000).toISOString();
+    }
+
+    getMatchHistory(name, tag, region, filters)
+      .then((res) => {
+        if (!cancelled) setData(res);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof ApiError ? err.message : 'Failed to load matches.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [name, tag, region, mode, map, agent, range]);
+
+  if (!data && loading) {
+    return (
+      <div className="w-full max-w-md rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-6 text-center text-sm text-zinc-500">
+        Loading match history… a player's first search can take half a minute.
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="w-full max-w-md rounded-md border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-300">
+        {error ?? 'Failed to load matches.'}
+      </div>
+    );
+  }
+
+  return (
+    <div className={`w-full max-w-md space-y-4 transition-opacity ${loading ? 'opacity-60' : ''}`}>
+      {error && (
+        <div className="rounded-md border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-300">
+          {error}
+        </div>
+      )}
+
+      <SummaryRow summary={data.summary} />
+      <FilterBar
+        options={data.filters}
+        mode={mode}
+        map={map}
+        agent={agent}
+        range={range}
+        onMode={setMode}
+        onMap={setMap}
+        onAgent={setAgent}
+        onRange={setRange}
+      />
+      <MatchHistoryList matches={data.matches} selfName={name} selfTag={tag} />
+    </div>
+  );
+}
+
+function SummaryRow({ summary }: { summary: HistorySummary }) {
+  const tiles = [
+    { label: 'Win rate', value: `${summary.winRate}%` },
+    { label: 'K/D', value: summary.kd.toFixed(2) },
+    { label: 'Avg ACS', value: String(summary.avgAcs) },
+    { label: 'HS%', value: `${summary.hsPercent}%` },
+  ];
+
+  return (
+    <div>
+      <div className="grid grid-cols-4 gap-2">
+        {tiles.map((tile) => (
+          <div
+            key={tile.label}
+            className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-2 py-2.5 text-center"
+          >
+            <p className="text-xs text-zinc-500">{tile.label}</p>
+            <p className="mt-0.5 text-lg font-semibold text-white">{tile.value}</p>
+          </div>
+        ))}
+      </div>
+      <p className="mt-1.5 text-center text-xs text-zinc-600">
+        {summary.matches} {summary.matches === 1 ? 'match' : 'matches'} ({summary.wins}W–
+        {summary.losses}L) match the filters
+      </p>
+    </div>
+  );
+}
+
+interface FilterBarProps {
+  options: FilterOptions;
+  mode: string;
+  map: string;
+  agent: string;
+  range: string;
+  onMode: (value: string) => void;
+  onMap: (value: string) => void;
+  onAgent: (value: string) => void;
+  onRange: (value: string) => void;
+}
+
+function FilterBar({ options, mode, map, agent, range, onMode, onMap, onAgent, onRange }: FilterBarProps) {
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <FilterSelect
+        label="Mode"
+        value={mode}
+        onChange={onMode}
+        allLabel="All modes"
+        options={options.modes.map((m) => ({ value: m.id, label: m.name }))}
+      />
+      <FilterSelect
+        label="Map"
+        value={map}
+        onChange={onMap}
+        allLabel="All maps"
+        options={options.maps.map((m) => ({ value: m, label: m }))}
+      />
+      <FilterSelect
+        label="Agent"
+        value={agent}
+        onChange={onAgent}
+        allLabel="All agents"
+        options={options.agents.map((a) => ({ value: a, label: a }))}
+      />
+      <FilterSelect label="Period" value={range} onChange={onRange} options={DATE_RANGES} />
+    </div>
+  );
+}
+
+interface FilterSelectProps {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  allLabel?: string;
+}
+
+function FilterSelect({ label, value, onChange, options, allLabel }: FilterSelectProps) {
+  return (
+    <select
+      aria-label={label}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className="w-full cursor-pointer appearance-none rounded-md border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-sm text-zinc-200 outline-none focus:border-valorant-red"
+    >
+      {allLabel !== undefined && <option value="">{allLabel}</option>}
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  );
+}

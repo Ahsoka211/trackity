@@ -1,28 +1,19 @@
 import { useState } from 'react';
 import { SearchBar } from './components/SearchBar';
 import { RankCard } from './components/RankCard';
-import { MatchHistoryList } from './components/MatchHistoryList';
+import { OverviewTab } from './components/OverviewTab';
 import { InsightsPanel } from './components/InsightsPanel';
-import {
-  getAccount,
-  getMMR,
-  getMatchHistory,
-  ApiError,
-  type Account,
-  type MMR,
-  type MatchSummary,
-} from './lib/api';
+import { getAccount, getMMR, ApiError, type Account, type MMR } from './lib/api';
 import { parseRiotId } from './lib/parseRiotId';
 
-type Tab = 'matches' | 'insights';
+type Tab = 'overview' | 'insights';
 
 function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
   const [mmr, setMmr] = useState<MMR | null>(null);
-  const [matches, setMatches] = useState<MatchSummary[]>([]);
-  const [tab, setTab] = useState<Tab>('matches');
+  const [tab, setTab] = useState<Tab>('overview');
 
   async function handleSearch(riotId: string) {
     const parsed = parseRiotId(riotId);
@@ -30,7 +21,6 @@ function App() {
       setError('Enter a valid Riot ID, like Name#TAG.');
       setAccount(null);
       setMmr(null);
-      setMatches([]);
       return;
     }
 
@@ -38,17 +28,12 @@ function App() {
     setError(null);
     setAccount(null);
     setMmr(null);
-    setMatches([]);
 
     try {
       const accountData = await getAccount(parsed.name, parsed.tag);
-      const [mmrData, matchesData] = await Promise.all([
-        getMMR(parsed.name, parsed.tag, accountData.region),
-        getMatchHistory(parsed.name, parsed.tag, accountData.region),
-      ]);
+      const mmrData = await getMMR(parsed.name, parsed.tag, accountData.region);
       setAccount(accountData);
       setMmr(mmrData);
-      setMatches(matchesData);
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 429) {
@@ -91,7 +76,7 @@ function App() {
             <RankCard account={account} mmr={mmr} />
 
             <div className="flex w-full max-w-md gap-1 rounded-lg border border-zinc-800 bg-zinc-900/60 p-1">
-              {(['matches', 'insights'] as const).map((t) => (
+              {(['overview', 'insights'] as const).map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -102,13 +87,18 @@ function App() {
                       : 'text-zinc-400 hover:text-zinc-200'
                   }`}
                 >
-                  {t === 'matches' ? 'Matches' : 'Insights'}
+                  {t === 'overview' ? 'Overview' : 'Insights'}
                 </button>
               ))}
             </div>
 
-            {tab === 'matches' ? (
-              <MatchHistoryList matches={matches} selfName={account.name} selfTag={account.tag} />
+            {tab === 'overview' ? (
+              <OverviewTab
+                key={`${account.name}#${account.tag}`}
+                name={account.name}
+                tag={account.tag}
+                region={account.region}
+              />
             ) : (
               <InsightsPanel name={account.name} tag={account.tag} region={account.region} />
             )}

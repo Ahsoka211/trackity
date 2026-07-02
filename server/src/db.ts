@@ -34,6 +34,9 @@ db.exec(`
     rounds_played INTEGER NOT NULL,
     teams_json TEXT NOT NULL
   );
+  CREATE INDEX IF NOT EXISTS idx_matches_queue ON matches (queue_id);
+  CREATE INDEX IF NOT EXISTS idx_matches_map ON matches (map_name);
+  CREATE INDEX IF NOT EXISTS idx_matches_started ON matches (started_at);
 
   CREATE TABLE IF NOT EXISTS match_players (
     match_id TEXT NOT NULL REFERENCES matches(match_id),
@@ -58,6 +61,7 @@ db.exec(`
     UNIQUE (match_id, puuid)
   );
   CREATE INDEX IF NOT EXISTS idx_match_players_puuid ON match_players (puuid);
+  CREATE INDEX IF NOT EXISTS idx_match_players_agent ON match_players (agent_name);
 
   CREATE TABLE IF NOT EXISTS rounds (
     match_id TEXT NOT NULL REFERENCES matches(match_id),
@@ -368,23 +372,115 @@ export const storeFullMatch = db.transaction((match: FullMatchDetails): boolean 
   return true;
 });
 
-const playerMatchesStmt = db.prepare(`
-  SELECT m.*
-  FROM matches m
-  JOIN match_players mp ON mp.match_id = m.match_id
-  WHERE mp.puuid = ?
-  ORDER BY m.started_at DESC
-  LIMIT ?
-`);
-
 const matchPlayersStmt = db.prepare(
   "SELECT * FROM match_players WHERE match_id = ?",
 );
 
-export function getPlayerMatches(puuid: string, limit: number): StoredMatchRow[] {
-  return playerMatchesStmt.all(puuid, limit) as StoredMatchRow[];
+const countPlayerMatchesStmt = db.prepare(
+  "SELECT COUNT(*) AS n FROM match_players WHERE puuid = ?",
+);
+
+export function countPlayerMatches(puuid: string): number {
+  return (countPlayerMatchesStmt.get(puuid) as { n: number }).n;
 }
 
 export function getMatchPlayers(matchId: string): StoredMatchPlayerRow[] {
   return matchPlayersStmt.all(matchId) as StoredMatchPlayerRow[];
+}
+
+export interface PlayerMatchFilter {
+  queueId?: string;
+  map?: string;
+  agent?: string;
+  // ISO timestamp lower bound on started_at
+  since?: string;
+}
+
+export interface PlayerMatchWithStatsRow extends StoredMatchRow {
+  agent_id: string;
+  agent_name: string;
+  team_id: string;
+  kills: number;
+  deaths: number;
+  assists: number;
+  score: number;
+  headshots: number;
+  bodyshots: number;
+  legshots: number;
+}
+
+// Filtered, newest-first match rows joined with the player's own per-match
+// stats. Prepared per call because the WHERE clause is dynamic; every filter
+// column is indexed.
+export function getPlayerMatchRows(
+  puuid: string,
+  filter: PlayerMatchFilter = {},
+): PlayerMatchWithStatsRow[] {
+  const clauses = ["mp.puuid = @puuid"];
+  const params: Record<string, string> = { puuid };
+  if (filter.queueId) {
+    clauses.push("m.queue_id = @queueId");
+    params.queueId = filter.queueId;
+  }
+  if (filter.map) {
+    clauses.push("m.map_name = @map");
+    params.map = filter.map;
+  }
+  if (filter.agent) {
+    clauses.push("mp.agent_name = @agent");
+    params.agent = filter.agent;
+  }
+  if (filter.since) {
+    clauses.push("m.started_at >= @since");
+    params.since = filter.since;
+  }
+  return db
+    .prepare(
+      `SELECT m.*, mp.agent_id, mp.agent_name, mp.team_id,
+              mp.kills, mp.deaths, mp.assists, mp.score,
+              mp.headshots, mp.bodyshots, mp.legshots
+       FROM matches m
+       JOIN match_players mp ON mp.match_id = m.match_id
+       WHERE ${clauses.join(" AND ")}
+       ORDER BY m.started_at DESC`,
+    )
+    .all(params) as PlayerMatchWithStatsRow[];
+}
+
+export interface PlayerFilterOptions {
+  modes: { id: string; name: string }[];
+  maps: string[];
+  agents: string[];
+}
+
+const playerModesStmt = db.prepare(`
+  SELECT DISTINCT m.queue_id AS id, m.queue_name AS name
+  FROM matches m
+  JOIN match_players mp ON mp.match_id = m.match_id
+  WHERE mp.puuid = ?
+  ORDER BY name
+`);
+
+const playerMapsStmt = db.prepare(`
+  SELECT DISTINCT m.map_name AS map
+  FROM matches m
+  JOIN match_players mp ON mp.match_id = m.match_id
+  WHERE mp.puuid = ?
+  ORDER BY map
+`);
+
+const playerAgentsStmt = db.prepare(
+  "SELECT DISTINCT agent_name FROM match_players WHERE puuid = ? ORDER BY agent_name",
+);
+
+// Dropdown options are derived from what's actually stored for the player,
+// unaffected by the active filter so narrowing never collapses the choices.
+export function getPlayerFilterOptions(puuid: string): PlayerFilterOptions {
+  return {
+    modes: playerModesStmt.all(puuid) as { id: string; name: string }[],
+    maps: (playerMapsStmt.all(puuid) as { map: string }[]).map((r) => r.map),
+    agents: (playerAgentsStmt.all(puuid) as { agent_name: string }[]).map(
+      (r) => r.agent_name,
+    ),
+  };
 }

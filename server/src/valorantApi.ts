@@ -1,16 +1,34 @@
 import {
+  countPlayerMatches,
   getCached,
   setCached,
   getMatchPlayers,
-  getPlayerMatches,
+  getPlayerFilterOptions,
+  getPlayerMatchRows,
   hasMatch,
   storeFullMatch,
+  type PlayerFilterOptions,
+  type PlayerMatchFilter,
+  type PlayerMatchWithStatsRow,
   type StoredMatchPlayerRow,
 } from "./db";
 
 const BASE_URL = "https://api.henrikdev.xyz/valorant";
-const MAX_MATCHES = 10;
+// How many recent matches to keep stored per player. Henrik's stored-matches
+// paging goes much deeper for frequently-tracked players; 50 keeps sync time
+// and rate-limit budget sane.
+const SYNC_DEPTH = 50;
+// Max new matches fetched while the HTTP request waits; anything beyond this
+// backfills in the background so a lookup never blocks for minutes.
+const SYNC_FOREGROUND_NEW = 10;
 const SYNC_DELAY_MS = 2000;
+// Background backfills aren't latency-sensitive, so they run at half pace and
+// leave rate-limit headroom for interactive requests.
+const BACKGROUND_SYNC_DELAY_MS = 4000;
+const BACKGROUND_429_MAX_RETRIES = 5;
+const BACKGROUND_429_DEFAULT_WAIT_S = 60;
+const STORED_MATCHES_PAGE_SIZE = 20;
+const MATCH_LIST_DEFAULT = 20;
 
 interface HenrikErrorBody {
   errors?: { code: number; message: string; status: number; details: unknown }[];
@@ -20,6 +38,7 @@ export class ValorantApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    public readonly retryAfterSeconds: number | null = null,
   ) {
     super(message);
     this.name = "ValorantApiError";
@@ -42,7 +61,12 @@ async function henrikGet<T>(
 
   if (!response.ok) {
     if (response.status === 429) {
-      throw new ValorantApiError(429, "Rate limited by the Henrik API. Try again shortly.");
+      const retryAfter = Number(response.headers.get("retry-after"));
+      throw new ValorantApiError(
+        429,
+        "Rate limited by the Henrik API. Try again shortly.",
+        Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null,
+      );
     }
     if (response.status === 404) {
       throw new ValorantApiError(404, "Player or match data not found.");
@@ -292,46 +316,130 @@ interface StoredMatchListEntry {
 }
 
 export interface SyncResult {
-  discovered: number;
+  missing: number;
   fetched: number;
-  alreadyStored: number;
+  queuedForBackground: number;
   failed: number;
 }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+// Walks stored-matches pages (newest first) up to `depth` entries and returns
+// ids not yet in the store. A page with nothing missing ends the walk early,
+// but only once the player's store has reached the depth target — otherwise a
+// previously interrupted backfill (newest page stored, deeper pages not)
+// would never resume.
+async function discoverMissingMatchIds(
+  puuid: string,
+  region: string,
+  depth: number,
+): Promise<string[]> {
+  const backfillComplete = countPlayerMatches(puuid) >= depth;
+  const missing: string[] = [];
+  let seen = 0;
+  for (let page = 1; seen < depth; page++) {
+    if (page > 1) await sleep(SYNC_DELAY_MS);
+    const entries = await henrikGet<StoredMatchListEntry[]>(
+      `/v1/by-puuid/stored-matches/${region}/${encodeURIComponent(puuid)}`,
+      { size: String(STORED_MATCHES_PAGE_SIZE), page: String(page) },
+    );
+    let pageMissing = 0;
+    for (const entry of entries) {
+      if (seen >= depth) break;
+      seen++;
+      if (!hasMatch(entry.meta.id)) {
+        missing.push(entry.meta.id);
+        pageMissing++;
+      }
+    }
+    if (entries.length < STORED_MATCHES_PAGE_SIZE) break; // history exhausted
+    if (pageMissing === 0 && backfillComplete) break;
+  }
+  return missing;
+}
+
+// Rethrows 429 (the caller decides whether to back off or abort); other
+// failures are logged and skipped — the match stays absent, so the next sync
+// retries it.
+async function fetchAndStore(matchId: string, region: string, delayMs: number): Promise<boolean> {
+  // Space every match-details call out from the previous API request.
+  await sleep(delayMs);
+  try {
+    storeFullMatch(await getFullMatchDetails(matchId, region));
+    return true;
+  } catch (err) {
+    if (err instanceof ValorantApiError && err.status === 429) throw err;
+    console.error(`Failed to sync match ${matchId}:`, err);
+    return false;
+  }
+}
+
+// Deep backfills run one player at a time on a shared chain so concurrent
+// lookups can't stack API traffic past the per-request spacing.
+let backgroundChain = Promise.resolve();
+const backgroundQueued = new Set<string>();
+
+function queueBackgroundSync(puuid: string, region: string, matchIds: string[]): void {
+  if (backgroundQueued.has(puuid)) return;
+  backgroundQueued.add(puuid);
+  backgroundChain = backgroundChain.then(async () => {
+    let fetched = 0;
+    let rateLimitRetries = 0;
+    try {
+      for (const id of matchIds) {
+        if (hasMatch(id)) continue;
+        for (;;) {
+          try {
+            if (await fetchAndStore(id, region, BACKGROUND_SYNC_DELAY_MS)) fetched++;
+            break;
+          } catch (err) {
+            // A backfill has no user waiting on it: wait out the limiter and
+            // resume rather than abort.
+            if (
+              err instanceof ValorantApiError &&
+              err.status === 429 &&
+              rateLimitRetries < BACKGROUND_429_MAX_RETRIES
+            ) {
+              rateLimitRetries++;
+              const waitSeconds = err.retryAfterSeconds ?? BACKGROUND_429_DEFAULT_WAIT_S;
+              console.log(
+                `Background sync for ${puuid}: rate limited, waiting ${waitSeconds}s ` +
+                  `(retry ${rateLimitRetries}/${BACKGROUND_429_MAX_RETRIES})`,
+              );
+              await sleep(waitSeconds * 1000);
+              continue;
+            }
+            throw err;
+          }
+        }
+      }
+    } catch (err) {
+      console.error(`Background sync for ${puuid} aborted:`, err);
+    } finally {
+      backgroundQueued.delete(puuid);
+      console.log(`Background sync for ${puuid}: stored ${fetched} of ${matchIds.length} queued`);
+    }
+  });
+}
+
 export async function syncPlayerHistory(puuid: string, region: string): Promise<SyncResult> {
-  const entries = await henrikGet<StoredMatchListEntry[]>(
-    `/v1/by-puuid/stored-matches/${region}/${encodeURIComponent(puuid)}`,
-    { size: String(MAX_MATCHES) },
-  );
+  const missing = await discoverMissingMatchIds(puuid, region, SYNC_DEPTH);
+  const foreground = missing.slice(0, SYNC_FOREGROUND_NEW);
+  const background = missing.slice(SYNC_FOREGROUND_NEW);
 
   const result: SyncResult = {
-    discovered: entries.length,
+    missing: missing.length,
     fetched: 0,
-    alreadyStored: 0,
+    queuedForBackground: background.length,
     failed: 0,
   };
 
-  for (const entry of entries) {
-    if (hasMatch(entry.meta.id)) {
-      result.alreadyStored++;
-      continue;
-    }
-    // Space every match-details call out from the previous API request.
-    await sleep(SYNC_DELAY_MS);
-    try {
-      storeFullMatch(await getFullMatchDetails(entry.meta.id, region));
-      result.fetched++;
-    } catch (err) {
-      if (err instanceof ValorantApiError && err.status === 429) throw err;
-      // One broken match shouldn't sink the sync; it stays absent from the
-      // store, so the next sync retries it.
-      console.error(`Failed to sync match ${entry.meta.id}:`, err);
-      result.failed++;
-    }
+  for (const id of foreground) {
+    if (await fetchAndStore(id, region, SYNC_DELAY_MS)) result.fetched++;
+    else result.failed++;
   }
 
+  if (background.length > 0) queueBackgroundSync(puuid, region, background);
   return result;
 }
 
@@ -388,30 +496,91 @@ function toScoreboardPlayer(p: StoredMatchPlayerRow, roundsPlayed: number): Scor
   };
 }
 
-export function getStoredMatchHistory(puuid: string, size = MAX_MATCHES): MatchSummary[] {
-  return getPlayerMatches(puuid, size).map((m) => {
-    const players = getMatchPlayers(m.match_id);
-    const me = players.find((p) => p.puuid === puuid);
-    const teams = JSON.parse(m.teams_json) as FullMatchDetails["teams"];
-    const myTeam = me ? teams.find((t) => t.team_id === me.team_id) : undefined;
+function rowToMatchSummary(m: PlayerMatchWithStatsRow): MatchSummary {
+  const teams = JSON.parse(m.teams_json) as FullMatchDetails["teams"];
+  const myTeam = teams.find((t) => t.team_id === m.team_id);
 
-    return {
-      matchId: m.match_id,
-      map: m.map_name,
-      mode: m.queue_name,
-      queue: m.queue_id,
-      playedAt: m.started_at,
-      roundsPlayed: m.rounds_played,
-      won: myTeam?.won ?? null,
-      agent: me?.agent_name ?? null,
-      agentIconUrl: me ? agentIconUrl(me.agent_id) : null,
-      kills: me?.kills ?? null,
-      deaths: me?.deaths ?? null,
-      assists: me?.assists ?? null,
-      score: myTeam ? { won: myTeam.rounds.won, lost: myTeam.rounds.lost } : null,
-      players: players
-        .map((p) => toScoreboardPlayer(p, m.rounds_played))
-        .sort((a, b) => b.acs - a.acs),
-    };
-  });
+  return {
+    matchId: m.match_id,
+    map: m.map_name,
+    mode: m.queue_name,
+    queue: m.queue_id,
+    playedAt: m.started_at,
+    roundsPlayed: m.rounds_played,
+    won: myTeam?.won ?? null,
+    agent: m.agent_name,
+    agentIconUrl: agentIconUrl(m.agent_id),
+    kills: m.kills,
+    deaths: m.deaths,
+    assists: m.assists,
+    score: myTeam ? { won: myTeam.rounds.won, lost: myTeam.rounds.lost } : null,
+    players: getMatchPlayers(m.match_id)
+      .map((p) => toScoreboardPlayer(p, m.rounds_played))
+      .sort((a, b) => b.acs - a.acs),
+  };
+}
+
+export interface HistorySummary {
+  matches: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  kd: number;
+  avgAcs: number;
+  hsPercent: number;
+}
+
+export interface FilteredMatchHistory {
+  summary: HistorySummary;
+  filters: PlayerFilterOptions;
+  matches: MatchSummary[];
+}
+
+// Summary aggregates cover every stored match passing the filter; only the
+// match list is capped at `size`.
+export function getFilteredMatchHistory(
+  puuid: string,
+  filter: PlayerMatchFilter = {},
+  size = MATCH_LIST_DEFAULT,
+): FilteredMatchHistory {
+  const rows = getPlayerMatchRows(puuid, filter);
+
+  let wins = 0;
+  let losses = 0;
+  let kills = 0;
+  let deaths = 0;
+  let score = 0;
+  let rounds = 0;
+  let head = 0;
+  let shots = 0;
+  for (const m of rows) {
+    const teams = JSON.parse(m.teams_json) as FullMatchDetails["teams"];
+    const won = teams.find((t) => t.team_id === m.team_id)?.won;
+    if (won === true) wins++;
+    if (won === false) losses++;
+    kills += m.kills;
+    deaths += m.deaths;
+    // ACS only makes sense for round-based modes; deathmatch score over its
+    // single "round" would dwarf every real value.
+    if (m.mode_type === "Standard") {
+      score += m.score;
+      rounds += m.rounds_played;
+    }
+    head += m.headshots;
+    shots += m.headshots + m.bodyshots + m.legshots;
+  }
+
+  return {
+    summary: {
+      matches: rows.length,
+      wins,
+      losses,
+      winRate: wins + losses > 0 ? Math.round((wins / (wins + losses)) * 1000) / 10 : 0,
+      kd: Math.round((deaths > 0 ? kills / deaths : kills) * 100) / 100,
+      avgAcs: rounds > 0 ? Math.round(score / rounds) : 0,
+      hsPercent: shots > 0 ? Math.round((head / shots) * 1000) / 10 : 0,
+    },
+    filters: getPlayerFilterOptions(puuid),
+    matches: rows.slice(0, size).map(rowToMatchSummary),
+  };
 }

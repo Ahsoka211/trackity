@@ -14,7 +14,7 @@ export function MatchHistoryList({ matches, selfName, selfTag }: MatchHistoryLis
   if (matches.length === 0) {
     return (
       <div className="w-full max-w-md rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-6 text-center text-sm text-zinc-500">
-        No recent matches found.
+        No matches found for the current filters.
       </div>
     );
   }

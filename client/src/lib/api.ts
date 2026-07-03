@@ -8,8 +8,8 @@ export class ApiError extends Error {
   }
 }
 
-async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(path);
+async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(path, { signal });
   const body = await response.json();
 
   if (!response.ok) {
@@ -120,6 +120,7 @@ export function getMatchHistory(
   region: string,
   filters: MatchFilters = {},
   size = 20,
+  signal?: AbortSignal,
 ): Promise<MatchHistoryResponse> {
   const params = new URLSearchParams({ region, size: String(size) });
   if (filters.mode) params.set('mode', filters.mode);
@@ -128,6 +129,7 @@ export function getMatchHistory(
   if (filters.since) params.set('since', filters.since);
   return apiGet<MatchHistoryResponse>(
     `/api/player/${encodeURIComponent(name)}/${encodeURIComponent(tag)}/matches?${params.toString()}`,
+    signal,
   );
 }
 
@@ -267,9 +269,15 @@ export interface PlayerRecommendations {
   recommendations: Recommendation[];
 }
 
-export function getInsights(name: string, tag: string, region: string): Promise<PlayerInsights> {
+export function getInsights(
+  name: string,
+  tag: string,
+  region: string,
+  signal?: AbortSignal,
+): Promise<PlayerInsights> {
   return apiGet<PlayerInsights>(
     `/api/player/${encodeURIComponent(name)}/${encodeURIComponent(tag)}/insights?region=${encodeURIComponent(region)}`,
+    signal,
   );
 }
 
@@ -277,8 +285,10 @@ export function getRecommendations(
   name: string,
   tag: string,
   region: string,
+  signal?: AbortSignal,
 ): Promise<PlayerRecommendations> {
   return apiGet<PlayerRecommendations>(
     `/api/player/${encodeURIComponent(name)}/${encodeURIComponent(tag)}/recommendations?region=${encodeURIComponent(region)}`,
+    signal,
   );
 }

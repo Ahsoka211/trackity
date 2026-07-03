@@ -32,7 +32,7 @@ export function OverviewTab({ name, tag, region }: OverviewTabProps) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     setLoading(true);
     setError(null);
 
@@ -44,25 +44,26 @@ export function OverviewTab({ name, tag, region }: OverviewTabProps) {
       filters.since = new Date(Date.now() - Number(range) * 86_400_000).toISOString();
     }
 
-    getMatchHistory(name, tag, region, filters)
+    getMatchHistory(name, tag, region, filters, 20, controller.signal)
       .then((res) => {
-        if (!cancelled) setData(res);
+        setData(res);
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof ApiError ? err.message : 'Failed to load matches.');
+        if (controller.signal.aborted) return;
+        setError(err instanceof ApiError ? err.message : 'Failed to load matches.');
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       });
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [name, tag, region, mode, map, agent, range]);
 
   if (!data && loading) {
     return (
-      <div className="w-full max-w-md rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-6 text-center text-sm text-zinc-500">
+      <div className="w-full rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-6 text-center text-sm text-zinc-500">
         Loading match history… a player's first search can take half a minute.
       </div>
     );
@@ -70,14 +71,14 @@ export function OverviewTab({ name, tag, region }: OverviewTabProps) {
 
   if (!data) {
     return (
-      <div className="w-full max-w-md rounded-md border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-300">
+      <div className="w-full rounded-md border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-300">
         {error ?? 'Failed to load matches.'}
       </div>
     );
   }
 
   return (
-    <div className={`w-full max-w-md space-y-4 transition-opacity ${loading ? 'opacity-60' : ''}`}>
+    <div className={`w-full space-y-4 transition-opacity ${loading ? 'opacity-60' : ''}`}>
       {error && (
         <div className="rounded-md border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-300">
           {error}
@@ -111,7 +112,7 @@ function SummaryRow({ summary }: { summary: HistorySummary }) {
 
   return (
     <div>
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-4 gap-3">
         {tiles.map((tile) => (
           <div
             key={tile.label}

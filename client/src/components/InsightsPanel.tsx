@@ -25,33 +25,35 @@ export function InsightsPanel({ name, tag, region }: InsightsPanelProps) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     setLoading(true);
     setError(null);
     setInsights(null);
 
-    Promise.all([getInsights(name, tag, region), getRecommendations(name, tag, region)])
+    Promise.all([
+      getInsights(name, tag, region, controller.signal),
+      getRecommendations(name, tag, region, controller.signal),
+    ])
       .then(([insightsData, recsData]) => {
-        if (cancelled) return;
         setInsights(insightsData);
         setRecommendations(recsData.recommendations);
       })
       .catch((err) => {
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
         setError(err instanceof ApiError ? err.message : 'Failed to load insights.');
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       });
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [name, tag, region]);
 
   if (loading) {
     return (
-      <div className="w-full max-w-md rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-6 text-center text-sm text-zinc-500">
+      <div className="w-full rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-6 text-center text-sm text-zinc-500">
         Crunching your match data…
       </div>
     );
@@ -59,7 +61,7 @@ export function InsightsPanel({ name, tag, region }: InsightsPanelProps) {
 
   if (error) {
     return (
-      <div className="w-full max-w-md rounded-md border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-300">
+      <div className="w-full rounded-md border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-300">
         {error}
       </div>
     );
@@ -67,42 +69,44 @@ export function InsightsPanel({ name, tag, region }: InsightsPanelProps) {
 
   if (!insights || insights.matchesAnalyzed === 0) {
     return (
-      <div className="w-full max-w-md rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-6 text-center text-sm text-zinc-500">
+      <div className="w-full rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-6 text-center text-sm text-zinc-500">
         No stored matches to analyze yet. Check back after a few games.
       </div>
     );
   }
 
   return (
-    <div className="w-full max-w-md space-y-4">
+    <div className="w-full space-y-4">
       <p className="text-center text-xs text-zinc-600">
         Based on {insights.matchesAnalyzed} matches · {insights.roundsAnalyzed} rounds
       </p>
 
       <RecommendationList recommendations={recommendations} />
 
-      <section className="rounded-lg border border-zinc-800 bg-zinc-900/60">
-        <h3 className="px-4 pt-4 pb-2 text-sm font-semibold text-zinc-400">Map performance</h3>
-        <MapTable insights={insights} />
-      </section>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <section className="rounded-lg border border-zinc-800 bg-zinc-900/60">
+          <h3 className="px-4 pt-4 pb-2 text-sm font-semibold text-zinc-400">Map performance</h3>
+          <MapTable insights={insights} />
+        </section>
 
-      <section>
-        <h3 className="pb-2 text-sm font-semibold text-zinc-400">Agent performance</h3>
-        <AgentCards insights={insights} />
-      </section>
+        <section>
+          <h3 className="pb-2 text-sm font-semibold text-zinc-400">Agent performance</h3>
+          <AgentCards insights={insights} />
+        </section>
 
-      <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4">
-        <h3 className="pb-1 text-sm font-semibold text-zinc-400">Weapon accuracy</h3>
-        <WeaponBreakdown insights={insights} />
-      </section>
+        <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4">
+          <h3 className="pb-1 text-sm font-semibold text-zinc-400">Weapon accuracy</h3>
+          <WeaponBreakdown insights={insights} />
+        </section>
 
-      <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4">
-        <h3 className="text-sm font-semibold text-zinc-400">Death timing</h3>
-        <p className="pb-3 text-xs text-zinc-600">
-          When you die within a round · {insights.deathTimes.totalDeaths} deaths
-        </p>
-        <DeathTimingChart deathTimes={insights.deathTimes} />
-      </section>
+        <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4">
+          <h3 className="text-sm font-semibold text-zinc-400">Death timing</h3>
+          <p className="pb-3 text-xs text-zinc-600">
+            When you die within a round · {insights.deathTimes.totalDeaths} deaths
+          </p>
+          <DeathTimingChart deathTimes={insights.deathTimes} />
+        </section>
+      </div>
     </div>
   );
 }

@@ -7,7 +7,7 @@ interface RankCardProps {
 
 export function RankCard({ account, mmr }: RankCardProps) {
   return (
-    <div className="w-full max-w-md rounded-lg border border-zinc-800 bg-zinc-900/60 p-6">
+    <div className="w-full rounded-lg border border-zinc-800 bg-zinc-900/60 p-6">
       <div className="flex items-center gap-4">
         {mmr.iconUrl ? (
           <img src={mmr.iconUrl} alt={mmr.tierName} className="h-16 w-16" />

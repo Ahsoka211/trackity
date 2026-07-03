@@ -158,6 +158,16 @@ export function getCached<T>(kind: string, riotId: string, region: string): T | 
   return JSON.parse(row.data) as T;
 }
 
+// Like getCached, but with a caller-supplied TTL instead of the fixed 5-minute
+// one — for cache entries that are just freshness markers (no data payload
+// worth returning) rather than lookup results.
+export function isCacheFresh(kind: string, riotId: string, region: string, ttlMs: number): boolean {
+  const row = selectStmt.get(cacheKey(kind, riotId, region)) as
+    | { data: string; fetched_at: number }
+    | undefined;
+  return row !== undefined && Date.now() - row.fetched_at <= ttlMs;
+}
+
 export function setCached(kind: string, riotId: string, region: string, data: unknown): void {
   upsertStmt.run({
     cacheKey: cacheKey(kind, riotId, region),

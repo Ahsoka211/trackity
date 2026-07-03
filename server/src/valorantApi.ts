@@ -1,6 +1,7 @@
 import {
   countPlayerMatches,
   getCached,
+  isCacheFresh,
   setCached,
   getMatchPlayers,
   getPlayerFilterOptions,
@@ -29,6 +30,11 @@ const BACKGROUND_429_MAX_RETRIES = 5;
 const BACKGROUND_429_DEFAULT_WAIT_S = 60;
 const STORED_MATCHES_PAGE_SIZE = 20;
 const MATCH_LIST_DEFAULT = 20;
+// Every /matches, /insights, and /recommendations request calls syncPlayerHistory,
+// and the frontend hits multiple of those per page view — without this gate,
+// each one re-lists stored-matches from Henrik even when nothing changed since
+// the last check a moment ago.
+const SYNC_CHECK_TTL_MS = 2 * 60 * 1000;
 
 interface HenrikErrorBody {
   errors?: { code: number; message: string; status: number; details: unknown }[];
@@ -422,8 +428,13 @@ function queueBackgroundSync(puuid: string, region: string, matchIds: string[]):
   });
 }
 
+const NOT_CHECKED_RESULT: SyncResult = { missing: 0, fetched: 0, queuedForBackground: 0, failed: 0 };
+
 export async function syncPlayerHistory(puuid: string, region: string): Promise<SyncResult> {
+  if (isCacheFresh("sync_check", puuid, region, SYNC_CHECK_TTL_MS)) return NOT_CHECKED_RESULT;
+
   const missing = await discoverMissingMatchIds(puuid, region, SYNC_DEPTH);
+  setCached("sync_check", puuid, region, true);
   const foreground = missing.slice(0, SYNC_FOREGROUND_NEW);
   const background = missing.slice(SYNC_FOREGROUND_NEW);
 

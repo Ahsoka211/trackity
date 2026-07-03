@@ -3,6 +3,7 @@ import { SearchBar } from './components/SearchBar';
 import { RankCard } from './components/RankCard';
 import { OverviewTab } from './components/OverviewTab';
 import { InsightsPanel } from './components/InsightsPanel';
+import { Leaderboard } from './components/Leaderboard';
 import { getAccount, getMMR, ApiError, type Account, type MMR } from './lib/api';
 import { parseRiotId } from './lib/parseRiotId';
 
@@ -69,6 +70,12 @@ function App() {
           {error && !loading && (
             <div className="w-full max-w-md rounded-md border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-300">
               {error}
+            </div>
+          )}
+
+          {!account && !loading && (
+            <div className="flex w-full justify-center">
+              <Leaderboard />
             </div>
           )}
         </div>

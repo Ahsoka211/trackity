@@ -54,6 +54,35 @@ export function getMMR(name: string, tag: string, region: string): Promise<MMR> 
   );
 }
 
+export interface LeaderboardEntry {
+  rank: number;
+  name: string;
+  tag: string;
+  anonymized: boolean;
+  tier: number;
+  tierName: string;
+  rr: number;
+  wins: number;
+  cardUrl: string | null;
+}
+
+export interface Leaderboard {
+  region: string;
+  updatedAt: string;
+  entries: LeaderboardEntry[];
+}
+
+export function getLeaderboard(
+  region: string,
+  size = 10,
+  signal?: AbortSignal,
+): Promise<Leaderboard> {
+  return apiGet<Leaderboard>(
+    `/api/leaderboard/${encodeURIComponent(region)}?size=${size}`,
+    signal,
+  );
+}
+
 export interface ScoreboardPlayer {
   puuid: string;
   name: string;

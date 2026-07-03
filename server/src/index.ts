@@ -5,6 +5,7 @@ import {
   ValorantApiError,
   getAccount,
   getFilteredMatchHistory,
+  getLeaderboard,
   getMMR,
   syncPlayerHistory,
 } from "./valorantApi";
@@ -118,6 +119,16 @@ app.get("/api/player/:name/:tag/recommendations", async (req, res) => {
     const account = await getAccount(req.params.name, req.params.tag);
     await syncPlayerHistory(account.puuid, region);
     res.json(getPlayerRecommendations(account.puuid));
+  } catch (err) {
+    handleValorantApiError(err, res);
+  }
+});
+
+app.get("/api/leaderboard/:region", async (req, res) => {
+  const size = Math.min(Number(req.query.size) || 10, 25);
+  try {
+    const leaderboard = await getLeaderboard(req.params.region, size, isForceRefresh(req.query.refresh));
+    res.json(leaderboard);
   } catch (err) {
     handleValorantApiError(err, res);
   }

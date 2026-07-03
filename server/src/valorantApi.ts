@@ -531,6 +531,79 @@ function rowToMatchSummary(m: PlayerMatchWithStatsRow): MatchSummary {
   };
 }
 
+export interface LeaderboardEntry {
+  rank: number;
+  name: string;
+  tag: string;
+  anonymized: boolean;
+  tier: number;
+  tierName: string;
+  rr: number;
+  wins: number;
+  cardUrl: string | null;
+}
+
+export interface Leaderboard {
+  region: string;
+  updatedAt: string;
+  entries: LeaderboardEntry[];
+}
+
+function playerCardUrl(cardId: string): string {
+  return `https://media.valorant-api.com/playercards/${cardId}/smallart.png`;
+}
+
+export async function getLeaderboard(
+  region: string,
+  size = 10,
+  forceRefresh = false,
+): Promise<Leaderboard> {
+  const cacheId = `top${size}`;
+  if (!forceRefresh) {
+    const cached = getCached<Leaderboard>("leaderboard", cacheId, region);
+    if (cached) return cached;
+  }
+
+  const data = await henrikGet<{
+    updated_at: string;
+    thresholds: { tier: { id: number; name: string } }[];
+    players: {
+      name: string;
+      tag: string;
+      leaderboard_rank: number;
+      tier: number;
+      rr: number;
+      wins: number;
+      card: string;
+      is_banned: boolean;
+      is_anonymized: boolean;
+    }[];
+  }>(`/v3/leaderboard/${region}/pc`, { size: String(size), start_index: "1" });
+
+  const tierNames = new Map(data.thresholds.map((t) => [t.tier.id, t.tier.name]));
+
+  const leaderboard: Leaderboard = {
+    region,
+    updatedAt: data.updated_at,
+    entries: data.players
+      .filter((p) => !p.is_banned)
+      .map((p) => ({
+        rank: p.leaderboard_rank,
+        name: p.is_anonymized ? "Anonymous" : p.name,
+        tag: p.is_anonymized ? "" : p.tag,
+        anonymized: p.is_anonymized,
+        tier: p.tier,
+        tierName: tierNames.get(p.tier) ?? "Unranked",
+        rr: p.rr,
+        wins: p.wins,
+        cardUrl: p.is_anonymized ? null : playerCardUrl(p.card),
+      })),
+  };
+
+  setCached("leaderboard", cacheId, region, leaderboard);
+  return leaderboard;
+}
+
 export interface HistorySummary {
   matches: number;
   wins: number;

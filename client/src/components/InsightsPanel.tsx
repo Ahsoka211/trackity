@@ -94,6 +94,11 @@ export function InsightsPanel({ name, tag, region }: InsightsPanelProps) {
           <AgentCards insights={insights} />
         </section>
 
+        <section className="rounded-lg border border-zinc-800 bg-zinc-900/60">
+          <h3 className="px-4 pt-4 pb-2 text-sm font-semibold text-zinc-400">Role breakdown</h3>
+          <RoleTable insights={insights} />
+        </section>
+
         <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4">
           <h3 className="pb-1 text-sm font-semibold text-zinc-400">Weapon accuracy</h3>
           <WeaponBreakdown insights={insights} />
@@ -171,6 +176,60 @@ function MapTable({ insights }: { insights: PlayerInsights }) {
               </div>
             </td>
             <td className="px-4 py-2 text-right tabular-nums">{m.kd.toFixed(2)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+const ROLE_COLORS: Record<string, string> = {
+  Duelist: 'bg-valorant-red',
+  Initiator: 'bg-amber-400',
+  Controller: 'bg-violet-400',
+  Sentinel: 'bg-emerald-400',
+  Unknown: 'bg-zinc-500',
+};
+
+function RoleTable({ insights }: { insights: PlayerInsights }) {
+  if (insights.roles.length === 0) {
+    return <p className="px-4 pb-4 text-sm text-zinc-500">No role data yet.</p>;
+  }
+
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-xs text-zinc-500">
+          <th className="px-4 py-2 text-left font-normal">Role</th>
+          <th className="py-2 text-right font-normal">W–L</th>
+          <th className="py-2 pl-4 text-left font-normal">Win rate</th>
+          <th className="px-4 py-2 text-right font-normal">K/D</th>
+        </tr>
+      </thead>
+      <tbody>
+        {insights.roles.map((r) => (
+          <tr key={r.role} className="border-t border-zinc-800/70 text-zinc-300">
+            <td className="px-4 py-2 font-medium text-white">
+              <div className="flex items-center gap-2">
+                <span className={`h-2 w-2 shrink-0 rounded-full ${ROLE_COLORS[r.role] ?? 'bg-zinc-500'}`} />
+                {r.role}
+              </div>
+            </td>
+            <td className="py-2 text-right tabular-nums">
+              {r.wins}–{r.losses}
+            </td>
+            <td className="py-2 pl-4">
+              <div className="flex items-center gap-2">
+                <div className="h-1.5 w-16 overflow-hidden rounded-full bg-zinc-800">
+                  <div
+                    className="h-full rounded-full bg-valorant-red"
+                    style={{ width: `${r.winRate}%` }}
+                  />
+                </div>
+                <span className="text-xs tabular-nums text-zinc-400">{r.winRate}%</span>
+              </div>
+            </td>
+            <td className="px-4 py-2 text-right tabular-nums">{r.kd.toFixed(2)}</td>
           </tr>
         ))}
       </tbody>

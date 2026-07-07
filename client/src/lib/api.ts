@@ -234,6 +234,19 @@ export interface AgentStat {
   kd: number;
 }
 
+export type AgentRole = 'Duelist' | 'Initiator' | 'Controller' | 'Sentinel';
+
+export interface RoleStat {
+  role: AgentRole | 'Unknown';
+  matches: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  kills: number;
+  deaths: number;
+  kd: number;
+}
+
 export interface SideRecord {
   rounds: number;
   won: number;
@@ -310,6 +323,7 @@ export interface PlayerInsights {
   overall: OverallStats;
   maps: MapStat[];
   agents: AgentStat[];
+  roles: RoleStat[];
   sidesByMap: SideStatByMap[];
   roundTypes: RoundTypeStat[];
   weapons: WeaponStat[];

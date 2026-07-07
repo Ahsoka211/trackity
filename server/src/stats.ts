@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { getAgentRole, type AgentRole } from "./agentRoles";
 
 // All insights are computed over Standard-mode matches only (competitive,
 // unrated, premier); deathmatch-style modes have no teams, sides, or economy.
@@ -362,6 +363,46 @@ export function computeAgentStats(ds: PlayerDataset): AgentStat[] {
     agentId: idByAgent.get(group) ?? "",
     ...rest,
   }));
+}
+
+export interface RoleStat {
+  role: AgentRole | "Unknown";
+  matches: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  kills: number;
+  deaths: number;
+  kd: number;
+}
+
+// Fixed display order rather than sorted by sample size, so the breakdown
+// reads as a stable comparison table instead of reshuffling per player.
+const ROLE_ORDER: (AgentRole | "Unknown")[] = [
+  "Duelist",
+  "Initiator",
+  "Controller",
+  "Sentinel",
+  "Unknown",
+];
+
+export function computeRoleStats(ds: PlayerDataset): RoleStat[] {
+  const byRole = new Map(
+    computeGroupedMatchStats(ds, (m) => getAgentRole(m.agent)).map((g) => [g.group, g]),
+  );
+  return ROLE_ORDER.filter((role) => byRole.has(role)).map((role) => {
+    const g = byRole.get(role)!;
+    return {
+      role,
+      matches: g.matches,
+      wins: g.wins,
+      losses: g.losses,
+      winRate: g.winRate,
+      kills: g.kills,
+      deaths: g.deaths,
+      kd: g.kd,
+    };
+  });
 }
 
 function computeGroupedMatchStats(ds: PlayerDataset, groupBy: (m: MatchInfo) => string) {
@@ -743,6 +784,7 @@ export interface PlayerInsights {
   overall: OverallStats;
   maps: MapStat[];
   agents: AgentStat[];
+  roles: RoleStat[];
   sidesByMap: SideStatByMap[];
   roundTypes: RoundTypeStat[];
   weapons: WeaponStat[];
@@ -760,6 +802,7 @@ export function getPlayerInsights(puuid: string): PlayerInsights {
     overall: computeOverallStats(ds),
     maps: computeMapStats(ds),
     agents: computeAgentStats(ds),
+    roles: computeRoleStats(ds),
     sidesByMap: computeSideStatsByMap(ds),
     roundTypes: computeRoundTypeStats(ds),
     weapons: computeWeaponStats(ds),

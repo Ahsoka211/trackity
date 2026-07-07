@@ -126,6 +126,7 @@ function App() {
                       name={account.name}
                       tag={account.tag}
                       region={account.region}
+                      mmr={mmr}
                     />
                   ) : (
                     <InsightsPanel name={account.name} tag={account.tag} region={account.region} />

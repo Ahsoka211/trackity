@@ -7,15 +7,18 @@ import {
   type MatchFilters,
   type MatchHistoryResponse,
   type MatchStreak,
+  type MMR,
 } from '../lib/api';
 import { MatchHistoryList } from './MatchHistoryList';
 import { RankProgressChart } from './RankProgressChart';
+import { ShareButton } from './ShareButton';
 import { StatTiles } from './StatTiles';
 
 interface OverviewTabProps {
   name: string;
   tag: string;
   region: string;
+  mmr: MMR;
 }
 
 const DATE_RANGES = [
@@ -25,7 +28,7 @@ const DATE_RANGES = [
   { value: '90', label: 'Last 90 days' },
 ];
 
-export function OverviewTab({ name, tag, region }: OverviewTabProps) {
+export function OverviewTab({ name, tag, region, mmr }: OverviewTabProps) {
   const [mode, setMode] = useState('');
   const [map, setMap] = useState('');
   const [agent, setAgent] = useState('');
@@ -87,6 +90,10 @@ export function OverviewTab({ name, tag, region }: OverviewTabProps) {
           {error}
         </div>
       )}
+
+      <div className="flex items-center justify-end">
+        <ShareButton name={name} tag={tag} region={region} mmr={mmr} summary={data.summary} />
+      </div>
 
       <SummaryRow summary={data.summary} />
       <RankProgressChart name={name} tag={tag} region={region} />

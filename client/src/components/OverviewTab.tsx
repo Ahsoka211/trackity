@@ -6,6 +6,7 @@ import {
   type HistorySummary,
   type MatchFilters,
   type MatchHistoryResponse,
+  type MatchStreak,
 } from '../lib/api';
 import { MatchHistoryList } from './MatchHistoryList';
 
@@ -123,11 +124,28 @@ function SummaryRow({ summary }: { summary: HistorySummary }) {
           </div>
         ))}
       </div>
-      <p className="mt-1.5 text-center text-xs text-zinc-600">
-        {summary.matches} {summary.matches === 1 ? 'match' : 'matches'} ({summary.wins}W–
-        {summary.losses}L) match the filters
-      </p>
+      <div className="mt-1.5 flex items-center justify-center gap-2">
+        <p className="text-center text-xs text-zinc-600">
+          {summary.matches} {summary.matches === 1 ? 'match' : 'matches'} ({summary.wins}W–
+          {summary.losses}L) match the filters
+        </p>
+        {summary.streak && <StreakBadge streak={summary.streak} />}
+      </div>
     </div>
+  );
+}
+
+function StreakBadge({ streak }: { streak: MatchStreak }) {
+  const isWin = streak.type === 'W';
+  return (
+    <span
+      className={`rounded px-1.5 py-0.5 text-xs font-bold tabular-nums ${
+        isWin ? 'bg-emerald-950/60 text-emerald-400' : 'bg-red-950/60 text-valorant-red'
+      }`}
+    >
+      {streak.type}
+      {streak.count}
+    </span>
   );
 }
 

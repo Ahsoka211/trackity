@@ -604,6 +604,11 @@ export async function getLeaderboard(
   return leaderboard;
 }
 
+export interface MatchStreak {
+  type: "W" | "L";
+  count: number;
+}
+
 export interface HistorySummary {
   matches: number;
   wins: number;
@@ -612,12 +617,35 @@ export interface HistorySummary {
   kd: number;
   avgAcs: number;
   hsPercent: number;
+  streak: MatchStreak | null;
 }
 
 export interface FilteredMatchHistory {
   summary: HistorySummary;
   filters: PlayerFilterOptions;
   matches: MatchSummary[];
+}
+
+// Rows are newest-first (see getPlayerMatchRows' ORDER BY), so the streak is
+// the run of consecutive same-result matches starting at index 0. Stops at
+// the first undecided match (no team found) rather than counting it as a break.
+function computeStreak(rows: PlayerMatchWithStatsRow[]): MatchStreak | null {
+  let won: boolean | null = null;
+  let count = 0;
+  for (const m of rows) {
+    const teams = JSON.parse(m.teams_json) as FullMatchDetails["teams"];
+    const result = teams.find((t) => t.team_id === m.team_id)?.won;
+    if (result === undefined) break;
+    if (won === null) {
+      won = result;
+      count = 1;
+    } else if (result === won) {
+      count++;
+    } else {
+      break;
+    }
+  }
+  return won === null ? null : { type: won ? "W" : "L", count };
 }
 
 // Summary aggregates cover every stored match passing the filter; only the
@@ -663,6 +691,7 @@ export function getFilteredMatchHistory(
       kd: Math.round((deaths > 0 ? kills / deaths : kills) * 100) / 100,
       avgAcs: rounds > 0 ? Math.round(score / rounds) : 0,
       hsPercent: shots > 0 ? Math.round((head / shots) * 1000) / 10 : 0,
+      streak: computeStreak(rows),
     },
     filters: getPlayerFilterOptions(puuid),
     matches: rows.slice(0, size).map(rowToMatchSummary),

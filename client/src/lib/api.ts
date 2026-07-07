@@ -114,6 +114,11 @@ export interface MatchSummary {
   players: ScoreboardPlayer[];
 }
 
+export interface MatchStreak {
+  type: 'W' | 'L';
+  count: number;
+}
+
 export interface HistorySummary {
   matches: number;
   wins: number;
@@ -122,6 +127,7 @@ export interface HistorySummary {
   kd: number;
   avgAcs: number;
   hsPercent: number;
+  streak: MatchStreak | null;
 }
 
 export interface FilterOptions {

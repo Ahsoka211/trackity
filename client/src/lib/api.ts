@@ -19,6 +19,22 @@ async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
   return body as T;
 }
 
+async function apiPost<T>(path: string, payload: unknown, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal,
+  });
+  const body = await response.json();
+
+  if (!response.ok) {
+    throw new ApiError(response.status, body.error ?? 'Something went wrong.');
+  }
+
+  return body as T;
+}
+
 export interface Account {
   puuid: string;
   name: string;
@@ -368,6 +384,45 @@ export function getRecommendations(
 ): Promise<PlayerRecommendations> {
   return apiGet<PlayerRecommendations>(
     `/api/player/${encodeURIComponent(name)}/${encodeURIComponent(tag)}/recommendations?region=${encodeURIComponent(region)}`,
+    signal,
+  );
+}
+
+export type SignalTier = 'low' | 'medium' | 'high';
+export type MatchVsRecent = 'consistent' | 'outlier-high' | 'outlier-low' | 'unknown';
+
+export interface PlayerSuspicionResult {
+  puuid: string;
+  name: string;
+  tag: string;
+  agent: string;
+  accountLevel: number | null;
+  tierName: string;
+  peakTierName: string | null;
+  matchAcs: number;
+  recentAvgAcs: number | null;
+  recentSampleSize: number;
+  matchVsRecent: MatchVsRecent;
+  score: number;
+  signalTier: SignalTier;
+  signals: string[];
+  fetchError: string | null;
+}
+
+export interface MatchSuspicionAnalysis {
+  matchId: string;
+  analyzedAt: string;
+  players: PlayerSuspicionResult[];
+}
+
+export function analyzeMatchPlayers(
+  matchId: string,
+  excludePuuid: string | null,
+  signal?: AbortSignal,
+): Promise<MatchSuspicionAnalysis> {
+  return apiPost<MatchSuspicionAnalysis>(
+    `/api/match/${encodeURIComponent(matchId)}/analyze-players`,
+    { excludePuuid },
     signal,
   );
 }

@@ -95,6 +95,12 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_kills_match ON kills (match_id);
 
+  CREATE TABLE IF NOT EXISTS match_analysis (
+    match_id TEXT PRIMARY KEY,
+    data TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS round_player_stats (
     match_id TEXT NOT NULL REFERENCES matches(match_id),
     round_num INTEGER NOT NULL,
@@ -385,6 +391,30 @@ export const storeFullMatch = db.transaction((match: FullMatchDetails): boolean 
 const matchPlayersStmt = db.prepare(
   "SELECT * FROM match_players WHERE match_id = ?",
 );
+
+const getMatchStmt = db.prepare("SELECT * FROM matches WHERE match_id = ?");
+
+export function getMatch(matchId: string): StoredMatchRow | undefined {
+  return getMatchStmt.get(matchId) as StoredMatchRow | undefined;
+}
+
+// --- On-demand match analysis cache (permanent per match; a finished match's
+// scoreboard never changes, so re-viewing must not re-trigger API calls) ---
+
+const getAnalysisStmt = db.prepare("SELECT data FROM match_analysis WHERE match_id = ?");
+const setAnalysisStmt = db.prepare(`
+  INSERT INTO match_analysis (match_id, data, created_at) VALUES (?, ?, ?)
+  ON CONFLICT(match_id) DO UPDATE SET data = excluded.data, created_at = excluded.created_at
+`);
+
+export function getMatchAnalysis<T>(matchId: string): T | null {
+  const row = getAnalysisStmt.get(matchId) as { data: string } | undefined;
+  return row ? (JSON.parse(row.data) as T) : null;
+}
+
+export function setMatchAnalysis(matchId: string, data: unknown): void {
+  setAnalysisStmt.run(matchId, JSON.stringify(data), Date.now());
+}
 
 const countPlayerMatchesStmt = db.prepare(
   "SELECT COUNT(*) AS n FROM match_players WHERE puuid = ?",

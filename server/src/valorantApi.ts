@@ -295,6 +295,55 @@ export async function getMMRHistory(
   return history;
 }
 
+// --- By-puuid lookups (used only by the on-demand match analysis) ---
+
+export interface PuuidMMR {
+  tier: number;
+  tierName: string;
+  peakTier: number | null;
+  peakTierName: string | null;
+}
+
+export async function getMMRByPuuid(puuid: string, region: string): Promise<PuuidMMR> {
+  const data = await henrikGet<{
+    current_data: { currenttier: number; currenttierpatched: string } | null;
+    highest_rank: { tier: number; patched_tier: string } | null;
+  }>(`/v2/by-puuid/mmr/${region}/${encodeURIComponent(puuid)}`);
+  return {
+    tier: data.current_data?.currenttier ?? 0,
+    tierName: data.current_data?.currenttierpatched ?? "Unranked",
+    peakTier: data.highest_rank?.tier ?? null,
+    peakTierName: data.highest_rank?.patched_tier ?? null,
+  };
+}
+
+export interface StoredMatchStatsEntry {
+  meta: { id: string; mode: string; started_at: string };
+  stats: {
+    puuid: string;
+    level: number;
+    tier: number;
+    score: number;
+    kills: number;
+    deaths: number;
+    assists: number;
+    shots: { head: number; body: number; leg: number };
+  };
+  // Round wins per side; their sum is the match's round count.
+  teams: { red: number | null; blue: number | null };
+}
+
+export async function getRecentCompetitiveMatches(
+  puuid: string,
+  region: string,
+  size: number,
+): Promise<StoredMatchStatsEntry[]> {
+  return henrikGet<StoredMatchStatsEntry[]>(
+    `/v1/by-puuid/stored-matches/${region}/${encodeURIComponent(puuid)}`,
+    { size: String(size), mode: "competitive" },
+  );
+}
+
 interface V4PlayerRef {
   puuid: string;
   name: string;

@@ -12,6 +12,7 @@ import {
 } from "./valorantApi";
 import { getPlayerInsights } from "./stats";
 import { getPlayerRecommendations } from "./recommendations";
+import { analyzeMatchPlayers } from "./suspicionAnalysis";
 
 dotenv.config();
 
@@ -134,6 +135,24 @@ app.get("/api/player/:name/:tag/recommendations", async (req, res) => {
     const account = await getAccount(req.params.name, req.params.tag);
     await syncPlayerHistory(account.puuid, region);
     res.json(getPlayerRecommendations(account.puuid));
+  } catch (err) {
+    handleValorantApiError(err, res);
+  }
+});
+
+// On-demand only: analysis runs when the user clicks the button in the match
+// detail view, never as part of the automatic match/insights pipeline.
+app.post("/api/match/:matchId/analyze-players", async (req, res) => {
+  const excludePuuid =
+    typeof req.body?.excludePuuid === "string" ? req.body.excludePuuid : null;
+  try {
+    const analysis = await analyzeMatchPlayers(req.params.matchId);
+    res.json({
+      ...analysis,
+      players: excludePuuid
+        ? analysis.players.filter((p) => p.puuid !== excludePuuid)
+        : analysis.players,
+    });
   } catch (err) {
     handleValorantApiError(err, res);
   }

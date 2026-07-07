@@ -258,7 +258,7 @@ function SuspicionRow({ matchId, player }: { matchId: string; player: PlayerSusp
                 disabled={scanning}
                 className="rounded border border-zinc-700 px-2 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-zinc-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {scanning ? 'Scanning recent matches…' : 'Investigate further'}
+                {scanning ? 'Scanning recent matches… this can take a minute or two' : 'Investigate further'}
               </button>
               {scanError && <p className="mt-1 text-[11px] text-red-300">{scanError}</p>}
             </>

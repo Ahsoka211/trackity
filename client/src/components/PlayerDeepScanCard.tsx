@@ -46,7 +46,7 @@ export function PlayerDeepScanCard({ name, tag, region }: PlayerDeepScanCardProp
             disabled={scanning}
             className="shrink-0 rounded-md border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:border-zinc-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {scanning ? 'Scanning recent matches…' : 'Check for boosting signals'}
+            {scanning ? 'Scanning recent matches… this can take a minute or two' : 'Check for boosting signals'}
           </button>
         )}
       </div>

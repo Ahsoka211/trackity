@@ -342,7 +342,10 @@ export async function analyzeMatchPlayers(matchId: string): Promise<MatchSuspici
 // Still not proof: could be coaching a friend, a family account, or a
 // legitimate skill gap between duo partners.
 
-const DEEP_SCAN_MATCH_COUNT = 10;
+// A duo-boosting pattern (a frequent, lopsided teammate) can easily miss a
+// 10-game window — that's often just the last couple of sessions. 25 covers
+// several weeks of typical play, giving repeated pairings room to show up.
+const DEEP_SCAN_MATCH_COUNT = 25;
 const MIN_SHARED_GAMES_FOR_DUO = 3;
 const BOOSTING_TIER_GAP = 6; // ~2 rank colors (bands are 3 tiers wide)
 const BOOSTING_ACS_RATIO = 1.6;
@@ -362,6 +365,12 @@ export interface PlayerDeepScan {
   puuid: string;
   scannedAt: string;
   matchesScanned: number;
+  // How deep this scan was configured to look, independent of matchesScanned
+  // (which can fall short for a player with little competitive history, or a
+  // few failed lookups). Lets a cache hit tell "targeted N, only found M
+  // matches" apart from "was computed against an older, shallower target" —
+  // only the latter should be treated as stale and recomputed.
+  requestedMatchCount: number;
   frequentTeammates: FrequentTeammate[];
   summary: string;
 }
@@ -384,7 +393,7 @@ interface TeammateAccumulator {
 
 export async function deepScanPlayer(puuid: string, region: string): Promise<PlayerDeepScan> {
   const cached = getPlayerDeepScan<PlayerDeepScan>(puuid);
-  if (cached) return cached;
+  if (cached && cached.requestedMatchCount >= DEEP_SCAN_MATCH_COUNT) return cached;
 
   const waitsUsed = { count: 0 };
   const stored = await withRateLimitWait(
@@ -480,6 +489,7 @@ export async function deepScanPlayer(puuid: string, region: string): Promise<Pla
     puuid,
     scannedAt: new Date().toISOString(),
     matchesScanned,
+    requestedMatchCount: DEEP_SCAN_MATCH_COUNT,
     frequentTeammates,
     summary,
   };

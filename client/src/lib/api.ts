@@ -442,6 +442,7 @@ export interface PlayerDeepScan {
   puuid: string;
   scannedAt: string;
   matchesScanned: number;
+  requestedMatchCount: number;
   frequentTeammates: FrequentTeammate[];
   summary: string;
 }

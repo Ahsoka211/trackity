@@ -1,12 +1,15 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import {
   analyzeMatchPlayers,
+  deepScanPlayer,
   ApiError,
   type MatchSummary,
   type MatchSuspicionAnalysis,
+  type PlayerDeepScan,
   type PlayerSuspicionResult,
   type SignalTier,
 } from '../lib/api';
+import { PlayerQuickStats } from './PlayerQuickStats';
 
 interface MatchRowProps {
   match: MatchSummary;
@@ -17,6 +20,8 @@ interface MatchRowProps {
 }
 
 export function MatchRow({ match, selfName, selfTag, expanded, onToggle }: MatchRowProps) {
+  const [expandedPlayer, setExpandedPlayer] = useState<string | null>(null);
+
   const resultLabel = match.won === null ? '—' : match.won ? 'W' : 'L';
   const resultClass =
     match.won === null
@@ -24,6 +29,12 @@ export function MatchRow({ match, selfName, selfTag, expanded, onToggle }: Match
       : match.won
         ? 'bg-emerald-950/60 text-emerald-400'
         : 'bg-red-950/60 text-valorant-red';
+
+  const selfPlayer = match.players.find(
+    (p) => p.name.toLowerCase() === selfName.toLowerCase() && p.tag.toLowerCase() === selfTag.toLowerCase(),
+  );
+  const selfPuuid = selfPlayer?.puuid ?? null;
+  const selfTeam = selfPlayer?.team ?? null;
 
   return (
     <div className="border-b border-zinc-800 last:border-b-0">
@@ -80,43 +91,55 @@ export function MatchRow({ match, selfName, selfTag, expanded, onToggle }: Match
             </thead>
             <tbody>
               {match.players.map((player) => {
-                const isSelf =
-                  player.name.toLowerCase() === selfName.toLowerCase() &&
-                  player.tag.toLowerCase() === selfTag.toLowerCase();
+                const isSelf = player.puuid === selfPuuid;
+                const isTeammate = !isSelf && selfTeam !== null && player.team === selfTeam;
+                const rowClass = isSelf
+                  ? 'font-semibold text-valorant-red'
+                  : isTeammate
+                    ? 'text-emerald-400'
+                    : 'text-red-400';
+                const isPlayerExpanded = expandedPlayer === player.puuid;
+
                 return (
-                  <tr key={player.puuid} className={isSelf ? 'font-semibold text-valorant-red' : 'text-zinc-300'}>
-                    <td className="py-1.5">
-                      <div className="flex items-center gap-2">
-                        {player.agentIconUrl && (
-                          <img src={player.agentIconUrl} alt={player.agent} className="h-5 w-5 rounded" />
-                        )}
-                        <span className="truncate">
-                          {player.name}
-                          <span className="text-zinc-500">#{player.tag}</span>
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-1.5 text-right">{player.kills}</td>
-                    <td className="py-1.5 text-right">{player.deaths}</td>
-                    <td className="py-1.5 text-right">{player.assists}</td>
-                    <td className="py-1.5 text-right">{player.acs}</td>
-                    <td className="py-1.5 text-right">{player.headshotPercent}%</td>
-                  </tr>
+                  <Fragment key={player.puuid}>
+                    <tr className={rowClass}>
+                      <td className="py-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedPlayer((current) => (current === player.puuid ? null : player.puuid))
+                          }
+                          className="flex w-full items-center gap-2 text-left hover:underline"
+                        >
+                          {player.agentIconUrl && (
+                            <img src={player.agentIconUrl} alt={player.agent} className="h-5 w-5 rounded" />
+                          )}
+                          <span className="truncate">
+                            {player.name}
+                            <span className="text-zinc-500">#{player.tag}</span>
+                          </span>
+                        </button>
+                      </td>
+                      <td className="py-1.5 text-right">{player.kills}</td>
+                      <td className="py-1.5 text-right">{player.deaths}</td>
+                      <td className="py-1.5 text-right">{player.assists}</td>
+                      <td className="py-1.5 text-right">{player.acs}</td>
+                      <td className="py-1.5 text-right">{player.headshotPercent}%</td>
+                    </tr>
+                    {isPlayerExpanded && (
+                      <tr>
+                        <td colSpan={6} className="bg-zinc-900/60">
+                          <PlayerQuickStats name={player.name} tag={player.tag} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
             </tbody>
           </table>
 
-          <SuspicionCheck
-            matchId={match.matchId}
-            selfPuuid={
-              match.players.find(
-                (p) =>
-                  p.name.toLowerCase() === selfName.toLowerCase() &&
-                  p.tag.toLowerCase() === selfTag.toLowerCase(),
-              )?.puuid ?? null
-            }
-          />
+          <SuspicionCheck matchId={match.matchId} selfPuuid={selfPuuid} />
         </div>
       )}
     </div>
@@ -174,15 +197,33 @@ function SuspicionCheck({ matchId, selfPuuid }: { matchId: string; selfPuuid: st
       </p>
       <div className="mt-2 space-y-1.5">
         {analysis.players.map((player) => (
-          <SuspicionRow key={player.puuid} player={player} />
+          <SuspicionRow key={player.puuid} matchId={matchId} player={player} />
         ))}
       </div>
     </div>
   );
 }
 
-function SuspicionRow({ player }: { player: PlayerSuspicionResult }) {
+function SuspicionRow({ matchId, player }: { matchId: string; player: PlayerSuspicionResult }) {
   const tier = TIER_STYLES[player.signalTier];
+  const [scan, setScan] = useState<PlayerDeepScan | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+
+  // Also strictly click-triggered — a separate, deeper follow-up only run
+  // per flagged player when explicitly requested.
+  async function handleDeepScan() {
+    setScanning(true);
+    setScanError(null);
+    try {
+      setScan(await deepScanPlayer(matchId, player.puuid));
+    } catch (err) {
+      setScanError(err instanceof ApiError ? err.message : 'Deep scan failed. Please try again.');
+    } finally {
+      setScanning(false);
+    }
+  }
+
   return (
     <div className="rounded-md bg-zinc-900/60 px-3 py-2">
       <div className="flex items-center gap-2">
@@ -205,6 +246,55 @@ function SuspicionRow({ player }: { player: PlayerSuspicionResult }) {
         </ul>
       )}
       {player.fetchError && <p className="mt-1 text-xs text-zinc-600">{player.fetchError}</p>}
+
+      {player.signalTier !== 'low' && (
+        <div className="mt-2 border-t border-zinc-800/70 pt-2">
+          {!scan ? (
+            <>
+              <button
+                type="button"
+                onClick={handleDeepScan}
+                disabled={scanning}
+                className="rounded border border-zinc-700 px-2 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-zinc-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {scanning ? 'Scanning recent matches…' : 'Investigate further'}
+              </button>
+              {scanError && <p className="mt-1 text-[11px] text-red-300">{scanError}</p>}
+            </>
+          ) : (
+            <DeepScanResult scan={scan} />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DeepScanResult({ scan }: { scan: PlayerDeepScan }) {
+  return (
+    <div>
+      <p className="text-[11px] text-zinc-500">
+        Checked their teammates across {scan.matchesScanned} recent competitive matches for a
+        duo-boosting pattern — not proof, just another statistical signal.
+      </p>
+      <p className="mt-1 text-[11px] text-zinc-400">{scan.summary}</p>
+      {scan.frequentTeammates.length > 0 && (
+        <ul className="mt-1.5 space-y-1">
+          {scan.frequentTeammates.map((t) => (
+            <li
+              key={t.puuid}
+              className={`text-[11px] ${t.possibleBoostingSignal ? 'text-amber-400' : 'text-zinc-500'}`}
+            >
+              <span className="font-medium">
+                {t.name}#{t.tag}
+              </span>{' '}
+              ({t.teammateTierName}) · {t.gamesTogether} games together · {t.scannedAvgAcs} ACS vs their{' '}
+              {t.teammateAvgAcs} ACS
+              {t.possibleBoostingSignal && ' — possible boosting pattern'}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

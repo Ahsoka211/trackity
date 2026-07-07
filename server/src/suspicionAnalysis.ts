@@ -2,12 +2,15 @@ import {
   getMatch,
   getMatchAnalysis,
   getMatchPlayers,
+  getPlayerDeepScan,
   setMatchAnalysis,
+  setPlayerDeepScan,
   type StoredMatchPlayerRow,
   type StoredMatchRow,
 } from "./db";
 import {
   ValorantApiError,
+  getFullMatchDetails,
   getMMRByPuuid,
   getRecentCompetitiveMatches,
   type StoredMatchStatsEntry,
@@ -327,4 +330,159 @@ export async function analyzeMatchPlayers(matchId: string): Promise<MatchSuspici
   };
   setMatchAnalysis(matchId, analysis);
   return analysis;
+}
+
+// --- Deep scan: opt-in, per-flagged-player follow-up ---
+//
+// Looks for a duo-boosting pattern: a teammate who shows up often in this
+// player's recent competitive matches at a much lower rank, with a large,
+// consistent performance gap. Both halves matter — a frequent lower-rank
+// teammate could just be a friend; a big performance gap in an isolated game
+// could just be a carry. The combination, repeated, is the actual signal.
+// Still not proof: could be coaching a friend, a family account, or a
+// legitimate skill gap between duo partners.
+
+const DEEP_SCAN_MATCH_COUNT = 10;
+const MIN_SHARED_GAMES_FOR_DUO = 3;
+const BOOSTING_TIER_GAP = 6; // ~2 rank colors (bands are 3 tiers wide)
+const BOOSTING_ACS_RATIO = 1.6;
+
+export interface FrequentTeammate {
+  puuid: string;
+  name: string;
+  tag: string;
+  gamesTogether: number;
+  scannedAvgAcs: number;
+  teammateAvgAcs: number;
+  teammateTierName: string;
+  possibleBoostingSignal: boolean;
+}
+
+export interface PlayerDeepScan {
+  puuid: string;
+  scannedAt: string;
+  matchesScanned: number;
+  frequentTeammates: FrequentTeammate[];
+  summary: string;
+}
+
+interface TeammateAccumulator {
+  name: string;
+  tag: string;
+  games: number;
+  teammateAcsSum: number;
+  scannedAcsSum: number;
+  teammateTierSum: number;
+  teammateTierCount: number;
+  scannedTierSum: number;
+  scannedTierCount: number;
+  // Set from the first (most recent, since matches are newest-first) shared
+  // game — a single representative label rather than an averaged-and-thus-
+  // meaningless tier name.
+  latestTierName: string;
+}
+
+export async function deepScanPlayer(puuid: string, region: string): Promise<PlayerDeepScan> {
+  const cached = getPlayerDeepScan<PlayerDeepScan>(puuid);
+  if (cached) return cached;
+
+  const waitsUsed = { count: 0 };
+  const stored = await withRateLimitWait(
+    () => getRecentCompetitiveMatches(puuid, region, DEEP_SCAN_MATCH_COUNT),
+    waitsUsed,
+  );
+
+  const teammates = new Map<string, TeammateAccumulator>();
+  let matchesScanned = 0;
+
+  for (const entry of stored) {
+    let details;
+    try {
+      details = await withRateLimitWait(() => getFullMatchDetails(entry.meta.id, region), waitsUsed);
+    } catch (err) {
+      if (err instanceof ValorantApiError && err.status === 429) throw err;
+      continue; // Henrik occasionally can't return details for one match; skip it.
+    }
+
+    const me = details.players.find((p) => p.puuid === puuid);
+    const rounds = details.rounds.length;
+    if (!me || rounds === 0) continue;
+    matchesScanned++;
+    const myAcs = me.stats.score / rounds;
+    const myTier = me.tier && me.tier.id > 0 ? me.tier.id : null;
+
+    for (const p of details.players) {
+      if (p.puuid === puuid || p.team_id !== me.team_id) continue;
+      let acc = teammates.get(p.puuid);
+      if (!acc) {
+        acc = {
+          name: p.name,
+          tag: p.tag,
+          games: 0,
+          teammateAcsSum: 0,
+          scannedAcsSum: 0,
+          teammateTierSum: 0,
+          teammateTierCount: 0,
+          scannedTierSum: 0,
+          scannedTierCount: 0,
+          latestTierName: p.tier?.name ?? "Unranked",
+        };
+        teammates.set(p.puuid, acc);
+      }
+      acc.games++;
+      acc.teammateAcsSum += p.stats.score / rounds;
+      acc.scannedAcsSum += myAcs;
+      if (p.tier && p.tier.id > 0) {
+        acc.teammateTierSum += p.tier.id;
+        acc.teammateTierCount++;
+      }
+      if (myTier !== null) {
+        acc.scannedTierSum += myTier;
+        acc.scannedTierCount++;
+      }
+    }
+  }
+
+  const frequentTeammates: FrequentTeammate[] = [...teammates.entries()]
+    .filter(([, acc]) => acc.games >= MIN_SHARED_GAMES_FOR_DUO)
+    .map(([teammatePuuid, acc]) => {
+      const teammateAvgAcs = Math.round(acc.teammateAcsSum / acc.games);
+      const scannedAvgAcs = Math.round(acc.scannedAcsSum / acc.games);
+      const teammateAvgTier = acc.teammateTierCount > 0 ? acc.teammateTierSum / acc.teammateTierCount : null;
+      const scannedAvgTier = acc.scannedTierCount > 0 ? acc.scannedTierSum / acc.scannedTierCount : null;
+      const tierGap = teammateAvgTier !== null && scannedAvgTier !== null ? scannedAvgTier - teammateAvgTier : null;
+      const acsRatio = teammateAvgAcs > 0 ? scannedAvgAcs / teammateAvgAcs : 0;
+      const possibleBoostingSignal =
+        tierGap !== null && tierGap >= BOOSTING_TIER_GAP && acsRatio >= BOOSTING_ACS_RATIO;
+
+      return {
+        puuid: teammatePuuid,
+        name: acc.name,
+        tag: acc.tag,
+        gamesTogether: acc.games,
+        scannedAvgAcs,
+        teammateAvgAcs,
+        teammateTierName: acc.latestTierName,
+        possibleBoostingSignal,
+      };
+    })
+    .sort((a, b) => Number(b.possibleBoostingSignal) - Number(a.possibleBoostingSignal) || b.gamesTogether - a.gamesTogether);
+
+  const flagged = frequentTeammates.filter((t) => t.possibleBoostingSignal);
+  const summary =
+    flagged.length > 0
+      ? `Plays regularly with ${flagged.length} teammate${flagged.length > 1 ? "s" : ""} at a notably lower rank with a large, consistent performance gap — a pattern that can indicate boosting, though it may also be a friend, duo partner, or family account.`
+      : frequentTeammates.length > 0
+        ? `No unusual rank or performance gap found among ${frequentTeammates.length} frequent teammate${frequentTeammates.length > 1 ? "s" : ""}.`
+        : `No teammates appeared often enough across the ${matchesScanned} scanned matches to assess duo patterns.`;
+
+  const scan: PlayerDeepScan = {
+    puuid,
+    scannedAt: new Date().toISOString(),
+    matchesScanned,
+    frequentTeammates,
+    summary,
+  };
+  setPlayerDeepScan(puuid, scan);
+  return scan;
 }

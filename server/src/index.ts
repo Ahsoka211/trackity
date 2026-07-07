@@ -12,7 +12,8 @@ import {
 } from "./valorantApi";
 import { getPlayerInsights } from "./stats";
 import { getPlayerRecommendations } from "./recommendations";
-import { analyzeMatchPlayers } from "./suspicionAnalysis";
+import { analyzeMatchPlayers, deepScanPlayer } from "./suspicionAnalysis";
+import { getMatch } from "./db";
 
 dotenv.config();
 
@@ -153,6 +154,22 @@ app.post("/api/match/:matchId/analyze-players", async (req, res) => {
         ? analysis.players.filter((p) => p.puuid !== excludePuuid)
         : analysis.players,
     });
+  } catch (err) {
+    handleValorantApiError(err, res);
+  }
+});
+
+// Also strictly on-demand: a separate, deeper follow-up scan triggered per
+// flagged player from the analyze-players results, never run automatically.
+app.post("/api/match/:matchId/analyze-players/:puuid/deep-scan", async (req, res) => {
+  const match = getMatch(req.params.matchId);
+  if (!match) {
+    res.status(404).json({ error: "Match not found in the local store." });
+    return;
+  }
+  try {
+    const scan = await deepScanPlayer(req.params.puuid, match.region);
+    res.json(scan);
   } catch (err) {
     handleValorantApiError(err, res);
   }

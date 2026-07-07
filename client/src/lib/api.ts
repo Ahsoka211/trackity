@@ -426,3 +426,34 @@ export function analyzeMatchPlayers(
     signal,
   );
 }
+
+export interface FrequentTeammate {
+  puuid: string;
+  name: string;
+  tag: string;
+  gamesTogether: number;
+  scannedAvgAcs: number;
+  teammateAvgAcs: number;
+  teammateTierName: string;
+  possibleBoostingSignal: boolean;
+}
+
+export interface PlayerDeepScan {
+  puuid: string;
+  scannedAt: string;
+  matchesScanned: number;
+  frequentTeammates: FrequentTeammate[];
+  summary: string;
+}
+
+export function deepScanPlayer(
+  matchId: string,
+  puuid: string,
+  signal?: AbortSignal,
+): Promise<PlayerDeepScan> {
+  return apiPost<PlayerDeepScan>(
+    `/api/match/${encodeURIComponent(matchId)}/analyze-players/${encodeURIComponent(puuid)}/deep-scan`,
+    {},
+    signal,
+  );
+}

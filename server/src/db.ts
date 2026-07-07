@@ -101,6 +101,12 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS player_deep_scan (
+    puuid TEXT PRIMARY KEY,
+    data TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS round_player_stats (
     match_id TEXT NOT NULL REFERENCES matches(match_id),
     round_num INTEGER NOT NULL,
@@ -414,6 +420,24 @@ export function getMatchAnalysis<T>(matchId: string): T | null {
 
 export function setMatchAnalysis(matchId: string, data: unknown): void {
   setAnalysisStmt.run(matchId, JSON.stringify(data), Date.now());
+}
+
+// --- Deep (per-player) scan cache, keyed by puuid rather than match — the
+// scan looks at a player's recent matches generally, not just this one ---
+
+const getDeepScanStmt = db.prepare("SELECT data FROM player_deep_scan WHERE puuid = ?");
+const setDeepScanStmt = db.prepare(`
+  INSERT INTO player_deep_scan (puuid, data, created_at) VALUES (?, ?, ?)
+  ON CONFLICT(puuid) DO UPDATE SET data = excluded.data, created_at = excluded.created_at
+`);
+
+export function getPlayerDeepScan<T>(puuid: string): T | null {
+  const row = getDeepScanStmt.get(puuid) as { data: string } | undefined;
+  return row ? (JSON.parse(row.data) as T) : null;
+}
+
+export function setPlayerDeepScan(puuid: string, data: unknown): void {
+  setDeepScanStmt.run(puuid, JSON.stringify(data), Date.now());
 }
 
 const countPlayerMatchesStmt = db.prepare(

@@ -1,3 +1,9 @@
+// Empty in local dev, where Vite's proxy (vite.config.ts) forwards /api to
+// the local server; set to the deployed server's origin in production
+// (e.g. on Vercel, since the static client and API server aren't on the
+// same domain there).
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? '';
+
 export class ApiError extends Error {
   readonly status: number;
 
@@ -9,7 +15,7 @@ export class ApiError extends Error {
 }
 
 async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(path, { signal });
+  const response = await fetch(`${API_BASE_URL}${path}`, { signal });
   const body = await response.json();
 
   if (!response.ok) {
@@ -20,7 +26,7 @@ async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
 }
 
 async function apiPost<T>(path: string, payload: unknown, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),

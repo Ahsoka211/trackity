@@ -202,6 +202,79 @@ export async function getMMR(
   return mmr;
 }
 
+export interface RankHistoryPoint {
+  matchId: string;
+  map: string;
+  playedAt: string;
+  tier: number;
+  tierName: string;
+  rr: number;
+  eloChange: number;
+  iconUrl: string | null;
+  // Set when this match's tier differs from the previous chronological
+  // point, so the chart can call out a promotion/demotion instead of
+  // letting the RR reset (e.g. Diamond 2 96RR -> Diamond 3 8RR) read as a drop.
+  rankChange: { fromTier: number; fromTierName: string } | null;
+}
+
+export interface RankHistory {
+  region: string;
+  points: RankHistoryPoint[];
+}
+
+export async function getMMRHistory(
+  name: string,
+  tag: string,
+  region: string,
+  forceRefresh = false,
+): Promise<RankHistory> {
+  const riotId = `${name}#${tag}`;
+  if (!forceRefresh) {
+    const cached = getCached<RankHistory>("mmr_history", riotId, region);
+    if (cached) return cached;
+  }
+
+  const data = await henrikGet<
+    {
+      currenttier: number;
+      currenttierpatched: string;
+      images: { small: string; large: string } | null;
+      match_id: string;
+      map: { id: string; name: string };
+      ranking_in_tier: number;
+      mmr_change_to_last_game: number;
+      date_raw: number;
+    }[]
+  >(`/v1/mmr-history/${region}/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`);
+
+  // Henrik returns newest-first; the chart reads left-to-right chronologically.
+  const chronological = [...data].reverse();
+
+  let previous: { tier: number; tierName: string } | null = null;
+  const points: RankHistoryPoint[] = chronological.map((m) => {
+    const rankChange =
+      previous && previous.tier !== m.currenttier
+        ? { fromTier: previous.tier, fromTierName: previous.tierName }
+        : null;
+    previous = { tier: m.currenttier, tierName: m.currenttierpatched };
+    return {
+      matchId: m.match_id,
+      map: m.map.name,
+      playedAt: new Date(m.date_raw * 1000).toISOString(),
+      tier: m.currenttier,
+      tierName: m.currenttierpatched,
+      rr: m.ranking_in_tier,
+      eloChange: m.mmr_change_to_last_game,
+      iconUrl: m.images?.large ?? null,
+      rankChange,
+    };
+  });
+
+  const history: RankHistory = { region, points };
+  setCached("mmr_history", riotId, region, history);
+  return history;
+}
+
 interface V4PlayerRef {
   puuid: string;
   name: string;

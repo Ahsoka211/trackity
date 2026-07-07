@@ -54,6 +54,35 @@ export function getMMR(name: string, tag: string, region: string): Promise<MMR> 
   );
 }
 
+export interface RankHistoryPoint {
+  matchId: string;
+  map: string;
+  playedAt: string;
+  tier: number;
+  tierName: string;
+  rr: number;
+  eloChange: number;
+  iconUrl: string | null;
+  rankChange: { fromTier: number; fromTierName: string } | null;
+}
+
+export interface RankHistory {
+  region: string;
+  points: RankHistoryPoint[];
+}
+
+export function getRankHistory(
+  name: string,
+  tag: string,
+  region: string,
+  signal?: AbortSignal,
+): Promise<RankHistory> {
+  return apiGet<RankHistory>(
+    `/api/player/${encodeURIComponent(name)}/${encodeURIComponent(tag)}/rank-history?region=${encodeURIComponent(region)}`,
+    signal,
+  );
+}
+
 export interface LeaderboardEntry {
   rank: number;
   name: string;

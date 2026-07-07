@@ -9,6 +9,7 @@ import {
   type MatchStreak,
 } from '../lib/api';
 import { MatchHistoryList } from './MatchHistoryList';
+import { RankProgressChart } from './RankProgressChart';
 
 interface OverviewTabProps {
   name: string;
@@ -87,6 +88,7 @@ export function OverviewTab({ name, tag, region }: OverviewTabProps) {
       )}
 
       <SummaryRow summary={data.summary} />
+      <RankProgressChart name={name} tag={tag} region={region} />
       <FilterBar
         options={data.filters}
         mode={mode}

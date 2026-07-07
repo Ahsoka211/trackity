@@ -7,6 +7,7 @@ import {
   getFilteredMatchHistory,
   getLeaderboard,
   getMMR,
+  getMMRHistory,
   syncPlayerHistory,
 } from "./valorantApi";
 import { getPlayerInsights } from "./stats";
@@ -55,6 +56,20 @@ app.get("/api/player/:name/:tag/mmr", async (req, res) => {
   try {
     const mmr = await getMMR(req.params.name, req.params.tag, region, isForceRefresh(req.query.refresh));
     res.json(mmr);
+  } catch (err) {
+    handleValorantApiError(err, res);
+  }
+});
+
+app.get("/api/player/:name/:tag/rank-history", async (req, res) => {
+  const region = req.query.region;
+  if (typeof region !== "string") {
+    res.status(400).json({ error: "Query param 'region' is required (e.g. na, eu, ap, kr, latam, br)." });
+    return;
+  }
+  try {
+    const history = await getMMRHistory(req.params.name, req.params.tag, region, isForceRefresh(req.query.refresh));
+    res.json(history);
   } catch (err) {
     handleValorantApiError(err, res);
   }

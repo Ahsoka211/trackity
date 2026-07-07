@@ -175,6 +175,25 @@ app.post("/api/match/:matchId/analyze-players/:puuid/deep-scan", async (req, res
   }
 });
 
+// On-demand deep scan of the player currently being viewed (as opposed to a
+// specific match's flagged player above) — same underlying scan, just
+// resolved by name/tag/region like every other player route instead of a
+// match_id, since there's no match context on a player's own page.
+app.post("/api/player/:name/:tag/deep-scan", async (req, res) => {
+  const region = req.query.region;
+  if (typeof region !== "string") {
+    res.status(400).json({ error: "Query param 'region' is required (e.g. na, eu, ap, kr, latam, br)." });
+    return;
+  }
+  try {
+    const account = await getAccount(req.params.name, req.params.tag);
+    const scan = await deepScanPlayer(account.puuid, region);
+    res.json(scan);
+  } catch (err) {
+    handleValorantApiError(err, res);
+  }
+});
+
 app.get("/api/leaderboard/:region", async (req, res) => {
   const size = Math.min(Number(req.query.size) || 10, 25);
   try {

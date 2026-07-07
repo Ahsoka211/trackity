@@ -10,6 +10,7 @@ import {
   type MMR,
 } from '../lib/api';
 import { MatchHistoryList } from './MatchHistoryList';
+import { PlayerDeepScanCard } from './PlayerDeepScanCard';
 import { RankProgressChart } from './RankProgressChart';
 import { ShareButton } from './ShareButton';
 import { StatTiles } from './StatTiles';
@@ -108,6 +109,7 @@ export function OverviewTab({ name, tag, region, mmr }: OverviewTabProps) {
         onAgent={setAgent}
         onRange={setRange}
       />
+      <PlayerDeepScanCard name={name} tag={tag} region={region} />
       <MatchHistoryList matches={data.matches} selfName={name} selfTag={tag} />
     </div>
   );

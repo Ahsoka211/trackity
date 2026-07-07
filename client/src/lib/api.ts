@@ -457,3 +457,19 @@ export function deepScanPlayer(
     signal,
   );
 }
+
+// Deep-scans whichever player's page is currently being viewed, rather than
+// a specific match's flagged player — same scan, resolved by name/tag/region
+// like every other player endpoint since there's no match_id on a profile page.
+export function deepScanCurrentPlayer(
+  name: string,
+  tag: string,
+  region: string,
+  signal?: AbortSignal,
+): Promise<PlayerDeepScan> {
+  return apiPost<PlayerDeepScan>(
+    `/api/player/${encodeURIComponent(name)}/${encodeURIComponent(tag)}/deep-scan?region=${encodeURIComponent(region)}`,
+    {},
+    signal,
+  );
+}

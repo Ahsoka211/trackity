@@ -3,6 +3,7 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -113,10 +114,14 @@ export function RankProgressChart({ name, tag, region }: RankProgressChartProps)
               width={42}
               domain={['dataMin - 10', 'dataMax + 10']}
             />
+            {/* Sub-tier boundaries (e.g. Diamond 1|2 at 100, 2|3 at 200) on
+                the continuous 0-300-per-color chartRr scale. */}
+            <ReferenceLine y={100} stroke="#3f3f46" strokeDasharray="3 3" />
+            <ReferenceLine y={200} stroke="#3f3f46" strokeDasharray="3 3" />
             <Tooltip content={RankTooltip} />
             <Area
               type="monotone"
-              dataKey="rr"
+              dataKey="chartRr"
               stroke={VALORANT_RED}
               strokeWidth={2}
               fill="url(#rrFill)"

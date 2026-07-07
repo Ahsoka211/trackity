@@ -61,6 +61,7 @@ export interface RankHistoryPoint {
   tier: number;
   tierName: string;
   rr: number;
+  chartRr: number;
   eloChange: number;
   iconUrl: string | null;
   rankChange: { fromTier: number; fromTierName: string } | null;

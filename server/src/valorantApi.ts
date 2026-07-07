@@ -209,17 +209,35 @@ export interface RankHistoryPoint {
   tier: number;
   tierName: string;
   rr: number;
+  // RR re-based onto a continuous 0-300 scale within the current rank color
+  // (e.g. Diamond 1/2/3), so a sub-tier-up reset (Diamond 2 96RR -> Diamond 3
+  // 8RR) plots as forward progress (196 -> 208) instead of a cliff. Ranks
+  // without three 100-RR sub-tiers (Radiant, Unrated) just pass `rr` through.
+  chartRr: number;
   eloChange: number;
   iconUrl: string | null;
-  // Set when this match's tier differs from the previous chronological
-  // point, so the chart can call out a promotion/demotion instead of
-  // letting the RR reset (e.g. Diamond 2 96RR -> Diamond 3 8RR) read as a drop.
+  // Set only when the rank *color* changes (e.g. Diamond -> Ascendant), not
+  // on every sub-tier bump — those are now visible directly on the
+  // continuous scale and don't need a callout.
   rankChange: { fromTier: number; fromTierName: string } | null;
 }
 
 export interface RankHistory {
   region: string;
   points: RankHistoryPoint[];
+}
+
+// "Diamond 2" -> { colorName: "Diamond", subTier: 2 }; "Radiant" (no trailing
+// sub-tier number) -> { colorName: "Radiant", subTier: null }.
+function splitTierName(tierName: string): { colorName: string; subTier: number | null } {
+  const match = tierName.match(/^(.*)\s(\d)$/);
+  if (!match) return { colorName: tierName, subTier: null };
+  return { colorName: match[1], subTier: Number(match[2]) };
+}
+
+function toChartRr(tierName: string, rr: number): number {
+  const { subTier } = splitTierName(tierName);
+  return subTier === null ? rr : (subTier - 1) * 100 + rr;
 }
 
 export async function getMMRHistory(
@@ -250,13 +268,14 @@ export async function getMMRHistory(
   // Henrik returns newest-first; the chart reads left-to-right chronologically.
   const chronological = [...data].reverse();
 
-  let previous: { tier: number; tierName: string } | null = null;
+  let previous: { tier: number; tierName: string; colorName: string } | null = null;
   const points: RankHistoryPoint[] = chronological.map((m) => {
+    const colorName = splitTierName(m.currenttierpatched).colorName;
     const rankChange =
-      previous && previous.tier !== m.currenttier
+      previous && previous.colorName !== colorName
         ? { fromTier: previous.tier, fromTierName: previous.tierName }
         : null;
-    previous = { tier: m.currenttier, tierName: m.currenttierpatched };
+    previous = { tier: m.currenttier, tierName: m.currenttierpatched, colorName };
     return {
       matchId: m.match_id,
       map: m.map.name,
@@ -264,6 +283,7 @@ export async function getMMRHistory(
       tier: m.currenttier,
       tierName: m.currenttierpatched,
       rr: m.ranking_in_tier,
+      chartRr: toChartRr(m.currenttierpatched, m.ranking_in_tier),
       eloChange: m.mmr_change_to_last_game,
       iconUrl: m.images?.large ?? null,
       rankChange,

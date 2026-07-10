@@ -19,23 +19,16 @@ function App() {
   const [tab, setTab] = useState<Tab>('overview');
   const [page, setPage] = useState<Page>('search');
 
-  async function handleSearch(riotId: string) {
-    const parsed = parseRiotId(riotId);
-    if (!parsed) {
-      setError('Enter a valid Riot ID, like Name#TAG.');
-      setAccount(null);
-      setMmr(null);
-      return;
-    }
-
+  async function loadPlayer(name: string, tag: string) {
     setLoading(true);
     setError(null);
     setAccount(null);
     setMmr(null);
+    setTab('overview');
 
     try {
-      const accountData = await getAccount(parsed.name, parsed.tag);
-      const mmrData = await getMMR(parsed.name, parsed.tag, accountData.region);
+      const accountData = await getAccount(name, tag);
+      const mmrData = await getMMR(name, tag, accountData.region);
       setAccount(accountData);
       setMmr(mmrData);
     } catch (err) {
@@ -55,23 +48,56 @@ function App() {
     }
   }
 
+  async function handleSearch(riotId: string) {
+    const parsed = parseRiotId(riotId);
+    if (!parsed) {
+      setError('Enter a valid Riot ID, like Name#TAG.');
+      setAccount(null);
+      setMmr(null);
+      return;
+    }
+
+    await loadPlayer(parsed.name, parsed.tag);
+  }
+
+  function goHome() {
+    setPage('search');
+    setAccount(null);
+    setMmr(null);
+    setError(null);
+    setTab('overview');
+  }
+
   return (
     <div className="min-h-screen bg-valorant-dark text-white">
       <div className="mx-auto flex max-w-[1500px] flex-col gap-8 px-4 py-10 sm:px-6 lg:px-10 lg:py-16">
         {page === 'compare' ? (
-          <ComparePage onBack={() => setPage('search')} />
+          <ComparePage onBack={goHome} />
         ) : (
           <>
             <div className="flex flex-col items-center gap-8">
               <div className="text-center">
-                <h1 className="text-3xl font-bold tracking-tight">
+                <button
+                  type="button"
+                  onClick={goHome}
+                  className="text-3xl font-bold tracking-tight transition hover:opacity-80"
+                >
                   <span className="text-valorant-red">Track</span>ity
-                </h1>
+                </button>
                 <p className="mt-1 text-sm text-zinc-500">Look up a player's current rank</p>
               </div>
 
               <div className="flex w-full max-w-2xl items-center justify-center gap-3">
                 <SearchBar onSearch={handleSearch} loading={loading} />
+                {account && (
+                  <button
+                    type="button"
+                    onClick={goHome}
+                    className="shrink-0 rounded-md border border-zinc-700 px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:border-zinc-600 hover:text-white"
+                  >
+                    Home
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setPage('compare')}
@@ -91,7 +117,7 @@ function App() {
 
               {!account && !loading && (
                 <div className="flex w-full justify-center">
-                  <Leaderboard />
+                  <Leaderboard onPlayerSelect={loadPlayer} />
                 </div>
               )}
             </div>

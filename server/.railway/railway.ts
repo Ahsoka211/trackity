@@ -6,9 +6,7 @@ export default defineRailway(() => {
   const web = service("trackity-server", {
     source: github("Ahsoka211/trackity", { branch: "main", rootDirectory: "server" }),
     build: { builder: "DOCKERFILE" },
-    volumeMounts: {
-      "/app/data": data,
-    },
+    deploy: { sleepApplication: true },
     env: {
       HENRIK_API_KEY: preserve(),
     },
